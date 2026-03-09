@@ -1756,6 +1756,31 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
+<!-- Create Logistics Account Modal -->
+<div class="modal-overlay" id="modal-create-logistics-account">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Create Portal Account</div>
+      <div class="modal-sub">Setting up account for: <strong id="cla-partner-name">—</strong></div>
+    </div>
+    <input type="hidden" id="cla-partner-id">
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Email Address</label>
+        <input type="email" class="form-input" id="cla-email" placeholder="logistics@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="text" class="form-input" id="cla-password" placeholder="Set login password" value="LivingWell2026">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-logistics-account')">Cancel</button>
+      <button class="btn btn-purple" onclick="saveLogisticsAccount()">Create Account</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Product Modal -->
 <div class="modal-overlay" id="modal-add-product">
   <div class="modal">
@@ -2639,13 +2664,22 @@ async function loadLogisticsPartners() {
 
 function openAddLogisticsModal() { document.getElementById('modal-add-logistics').classList.add('open'); }
 
-async function createLogisticsAccount(id, name) {
-  const email = prompt(`Enter email for ${name}:`);
-  if (!email) return;
-  const password = prompt(`Set password for ${name}:`, 'LivingWell2026');
+function createLogisticsAccount(id, name) {
+  document.getElementById('cla-partner-id').value = id;
+  document.getElementById('cla-partner-name').textContent = name;
+  document.getElementById('cla-email').value = '';
+  document.getElementById('cla-password').value = 'LivingWell2026';
+  document.getElementById('modal-create-logistics-account').classList.add('open');
+}
+
+async function saveLogisticsAccount() {
+  const id = document.getElementById('cla-partner-id').value;
+  const name = document.getElementById('cla-partner-name').textContent;
+  const email = document.getElementById('cla-email').value.trim();
+  const password = document.getElementById('cla-password').value.trim();
+  if (!email) { showToast('Please enter an email address', 'error'); return; }
   if (!password || password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
   try {
-    // Create auth user
     const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
       method: 'POST',
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
@@ -2653,9 +2687,9 @@ async function createLogisticsAccount(id, name) {
     });
     const authData = await authRes.json();
     if (!authRes.ok) { showToast(authData.message || 'Failed to create account', 'error'); return; }
-    // Link user_id and email to logistics_partner
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
-    showToast(`Portal account created for ${name}! Email: ${email}`, 'success');
+    closeModal('modal-create-logistics-account');
+    showToast(`Portal account created for ${name}!`, 'success');
     loadLogisticsPage();
   } catch(e) { showToast('Failed to create account: ' + e.message, 'error'); }
 }
