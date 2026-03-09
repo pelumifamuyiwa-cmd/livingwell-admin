@@ -2121,6 +2121,7 @@ function toggleSidebar() {
 // ── API HELPER ──
 async function api(path, method = 'GET', body = null, extraHeaders = {}) {
   const token = localStorage.getItem('lw_token') || SUPABASE_KEY;
+  if (!token) throw new Error('Not authenticated');
   const opts = {
     method,
     headers: { ...headers, 'Authorization': `Bearer ${token}`, ...extraHeaders }
@@ -3411,7 +3412,7 @@ async function loadWeeklyPerformance() {
     localStorage.setItem('lw_weekly_perf_shown', todayStr);
 
   } catch(e) {
-    console.log('Weekly perf load failed:', e.message);
+    // silent fail
   }
 }
 
