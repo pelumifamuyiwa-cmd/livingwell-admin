@@ -1454,10 +1454,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="page-header">
         <div>
           <div class="page-title">Daily Reconciliation</div>
-          <div class="page-sub">Track payments and outstanding balances</div>
+          <div class="page-sub">Track payments and outstanding balances per logistics partner</div>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <input type="date" class="filter-select" id="recon-date" onchange="loadReconciliation()">
+          <select class="filter-select" id="recon-logistics-filter" onchange="loadReconciliation()" style="font-size:0.78rem;">
+            <option value="">All Logistics</option>
+          </select>
           <button class="btn btn-purple" onclick="loadReconciliation()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             Refresh
@@ -2563,40 +2566,115 @@ async function saveStockUpdate() {
 async function loadReconciliation() {
   const date = document.getElementById('recon-date').value;
   if (!date) return;
+
+  // Populate logistics filter once
+  const logSel = document.getElementById('recon-logistics-filter');
+  if (logSel && logSel.options.length <= 1) {
+    try {
+      const partners = await api(`logistics_partners?select=id,name&order=name`);
+      (partners||[]).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        logSel.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  const partnerFilter = logSel?.value || '';
+
   try {
-    const [orders, payments] = await Promise.all([
-      api(`orders?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code)&order=created_at.desc`),
-      api(`payments?confirmed_at=gte.${date}T00:00:00&confirmed_at=lte.${date}T23:59:59&select=*`)
-    ]);
+    // Load deliveries for that date (linked to orders and logistics partners)
+    const deliveries = await api(
+      `deliveries?assigned_at=gte.${date}T00:00:00&assigned_at=lte.${date}T23:59:59&select=*,logistics_partners(id,name),orders(customer_name,total_price,status,quantity,products(name),profiles(full_name,ref_code))&order=assigned_at.desc`
+    );
 
-    const totalOrders = (orders||[]).reduce((s,o) => s + parseFloat(o.total_price||0), 0);
-    const totalReceived = (payments||[]).reduce((s,p) => s + parseFloat(p.amount_received||0), 0);
-    const totalPending = totalOrders - totalReceived;
-    const delivered = (orders||[]).filter(o => ['delivered_payment_made','delivered_awaiting_payment'].includes(o.status)).length;
+    let data = deliveries || [];
+    if (partnerFilter) data = data.filter(d => d.logistics_partner_id === partnerFilter);
 
-    document.getElementById('recon-total').textContent = '₦' + totalOrders.toLocaleString();
-    document.getElementById('recon-received').textContent = '₦' + totalReceived.toLocaleString();
-    document.getElementById('recon-pending').textContent = '₦' + Math.max(0, totalPending).toLocaleString();
-    document.getElementById('recon-delivered').textContent = delivered;
+    // Overall stats
+    const delivered = data.filter(d => ['delivered_payment_made','delivered_awaiting_payment'].includes(d.status));
+    const paid = data.filter(d => d.status === 'delivered_payment_made');
+    const awaiting = data.filter(d => d.status === 'delivered_awaiting_payment');
+    const cancelled = data.filter(d => d.status === 'cancelled');
+
+    const totalValue = delivered.reduce((s,d) => s + parseFloat(d.orders?.total_price||0), 0);
+    const receivedValue = paid.reduce((s,d) => s + parseFloat(d.orders?.total_price||0), 0);
+    const pendingValue = awaiting.reduce((s,d) => s + parseFloat(d.orders?.total_price||0), 0);
+
+    document.getElementById('recon-total').textContent = '₦' + totalValue.toLocaleString();
+    document.getElementById('recon-received').textContent = '₦' + receivedValue.toLocaleString();
+    document.getElementById('recon-pending').textContent = '₦' + pendingValue.toLocaleString();
+    document.getElementById('recon-delivered').textContent = delivered.length;
 
     const el = document.getElementById('recon-list');
-    if (!orders?.length) { el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);">No orders for this date</div>'; return; }
+    if (!data.length) {
+      el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);">No deliveries for this date</div>';
+      return;
+    }
 
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-      <thead><tr>
-        <th>Customer</th><th>Product</th><th>Rep</th><th>Amount</th><th>Status</th><th>Payment</th>
-      </tr></thead>
-      <tbody>
-        ${orders.map(o => `<tr>
-          <td class="td-name">${o.customer_name}</td>
-          <td style="font-size:0.8rem;color:var(--text2);">${o.products?.name?.substring(0,25)||'—'}...</td>
-          <td><span style="font-size:0.75rem;font-weight:600;color:var(--purple-light);">${o.profiles?.ref_code||'—'}</span></td>
-          <td class="td-amount" style="color:var(--green);">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
-          <td><span class="badge badge-${o.status}">${o.status}</span></td>
-          <td><span class="badge ${o.status==='delivered_payment_made'?'badge-received':o.status==='delivered_awaiting_payment'?'badge-pending':'badge-pending'}">${o.status==='delivered_payment_made'?'received':o.status==='delivered_awaiting_payment'?'awaiting':'pending'}</span></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`;
+    // Group by logistics partner
+    const grouped = {};
+    data.forEach(d => {
+      const pid = d.logistics_partner_id;
+      const pname = d.logistics_partners?.name || 'Unassigned';
+      if (!grouped[pid]) grouped[pid] = { name: pname, deliveries: [] };
+      grouped[pid].deliveries.push(d);
+    });
+
+    el.innerHTML = Object.values(grouped).map(g => {
+      const gPaid = g.deliveries.filter(d=>d.status==='delivered_payment_made');
+      const gAwaiting = g.deliveries.filter(d=>d.status==='delivered_awaiting_payment');
+      const gCancelled = g.deliveries.filter(d=>d.status==='cancelled');
+      const gPaidVal = gPaid.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0);
+      const gAwaitingVal = gAwaiting.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0);
+
+      return `
+      <div style="border-bottom:2px solid var(--border);">
+        <!-- Partner header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--bg2);">
+          <div style="font-weight:700;font-size:0.9rem;color:var(--text);">🚚 ${g.name}</div>
+          <div style="display:flex;gap:16px;font-size:0.75rem;flex-wrap:wrap;">
+            <span style="color:var(--green);font-weight:600;">Paid: ₦${gPaidVal.toLocaleString()}</span>
+            <span style="color:var(--amber);font-weight:600;">Awaiting: ₦${gAwaitingVal.toLocaleString()}</span>
+            <span style="color:var(--text3);">${g.deliveries.length} total · ${gCancelled.length} cancelled</span>
+          </div>
+        </div>
+        <!-- Partner orders table -->
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Customer</th><th>Product</th><th>Qty</th><th>Rep</th><th>Amount</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              ${g.deliveries.map(d => {
+                const o = d.orders || {};
+                const statusColors = {
+                  delivered_payment_made: 'badge-active',
+                  delivered_awaiting_payment: 'badge-pending',
+                  cancelled: 'badge-cancelled',
+                  assigned: 'badge-assigned'
+                };
+                const statusLabels = {
+                  delivered_payment_made: 'Paid ✓',
+                  delivered_awaiting_payment: 'Awaiting Pay',
+                  cancelled: 'Cancelled',
+                  assigned: 'Pending'
+                };
+                return `<tr>
+                  <td class="td-name">${o.customer_name||'—'}</td>
+                  <td style="font-size:0.8rem;color:var(--text2);">${o.products?.name?.substring(0,22)||'—'}</td>
+                  <td class="td-mono">${o.quantity||'—'}</td>
+                  <td><span style="font-size:0.72rem;font-weight:600;color:var(--purple-light);">${o.profiles?.ref_code||'—'}</span></td>
+                  <td class="td-amount" style="color:${d.status==='delivered_payment_made'?'var(--green)':d.status==='delivered_awaiting_payment'?'var(--amber)':'var(--text3)'};">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
+                  <td><span class="badge ${statusColors[d.status]||'badge-pending'}">${statusLabels[d.status]||d.status}</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+
   } catch(e) { showToast('Failed to load reconciliation', 'error'); }
 }
 
