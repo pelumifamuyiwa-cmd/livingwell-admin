@@ -2644,11 +2644,13 @@ async function toggleRepStatus(id, isActive) {
 }
 
 async function deleteRep(id, name) {
-  if (!confirm(`Are you sure you want to permanently delete ${name}? This cannot be undone.`)) return;
+  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nThis will also remove all their orders from the system. This cannot be undone.`)) return;
   try {
-    // Delete profile first (auth user stays but can't login without profile)
+    // 1. Nullify rep_id on all their orders (preserve order history but unlink rep)
+    await api(`orders?rep_id=eq.${id}`, 'PATCH', { rep_id: null }, { Prefer: 'return=minimal' });
+    // 2. Delete profile
     await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // Delete auth user via admin endpoint
+    // 3. Delete auth user
     await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
       method: 'DELETE',
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
