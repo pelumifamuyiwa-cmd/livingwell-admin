@@ -1500,15 +1500,27 @@ tr:hover td { background: rgba(255,255,255,0.02); }
                 <th>Partner Name</th>
                 <th>Phone</th>
                 <th>Coverage Area</th>
-                <th>Total Deliveries</th>
+                <th>Stock Sent</th>
+                <th>Confirmed</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="logistics-body">
-              <tr><td colspan="6" class="loading">Loading logistics partners...</td></tr>
+              <tr><td colspan="7" class="loading">Loading logistics partners...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Stock Allocations Overview -->
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+          <div class="card-title">Stock Allocations</div>
+          <div class="card-sub">What has been sent to each logistics partner</div>
+        </div>
+        <div id="stock-allocations-body">
+          <div class="loading">Loading allocations...</div>
         </div>
       </div>
     </div>
@@ -1712,6 +1724,33 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-update-stock')">Cancel</button>
       <button class="btn btn-purple" onclick="saveStockUpdate()">Update Stock</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Send Stock Modal -->
+<div class="modal-overlay" id="modal-send-stock">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Send Stock to Logistics</div>
+      <div class="modal-sub">Sending to: <strong id="send-stock-partner-name">—</strong></div>
+    </div>
+    <input type="hidden" id="send-stock-partner-id">
+    <div class="form-group">
+      <label class="form-label">Product</label>
+      <select class="form-input" id="send-stock-product-select">
+        <option value="">Select product...</option>
+      </select>
+      <div style="font-size:0.72rem;color:var(--text3);margin-top:4px;" id="send-stock-available"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Quantity to Send</label>
+      <input type="number" class="form-input" id="send-stock-qty" placeholder="Enter quantity" min="1">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-send-stock')">Cancel</button>
+      <button class="btn btn-purple" onclick="confirmSendStock()">Send Stock</button>
     </div>
   </div>
 </div>
@@ -2281,21 +2320,62 @@ async function loadLogisticsPage() {
     const data = await api(`logistics_partners?select=*&order=name`);
     const tbody = document.getElementById('logistics-body');
     if (!data?.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);">No logistics partners found</td></tr>'; return; }
-    tbody.innerHTML = data.map(l => `
+    // Load stock totals per partner
+    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,quantity_confirmed,confirmed`);
+    const stockMap = {};
+    (allStock||[]).forEach(s => {
+      if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0 };
+      stockMap[s.logistics_partner_id].sent += s.quantity_sent||0;
+      if (s.confirmed) stockMap[s.logistics_partner_id].confirmed += s.quantity_confirmed||0;
+    });
+
+    tbody.innerHTML = data.map(l => {
+      const st = stockMap[l.id] || { sent:0, confirmed:0 };
+      const pendingConfirm = st.sent - st.confirmed;
+      return `
       <tr>
         <td class="td-name">${l.name}</td>
         <td class="td-mono">${l.phone||'—'}</td>
         <td style="color:var(--text2);font-size:0.82rem;">${l.coverage_area||'—'}</td>
-        <td class="td-mono">—</td>
+        <td class="td-mono">${st.sent > 0 ? st.sent : '—'}</td>
+        <td class="td-mono">${st.confirmed > 0 ? `<span style="color:var(--green)">${st.confirmed}</span>${pendingConfirm>0?` <span style="color:var(--amber);font-size:0.7rem;">(${pendingConfirm} pending)</span>`:''}` : '—'}</td>
         <td><span class="badge ${l.is_active?'badge-active':'badge-inactive'}">${l.is_active?'Active':'Inactive'}</span></td>
         <td>
           <div class="row-actions">
             ${l.phone ? `<a href="https://wa.me/${l.phone.replace(/[^0-9]/g,'').replace(/^0/,'234')}" target="_blank" class="btn btn-green btn-sm" style="text-decoration:none;">WhatsApp</a>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="editLogistics('${l.id}','${l.name}','${l.phone||''}','${l.coverage_area||''}')">Edit</button>
+            ${l.user_id ? `<span class="badge badge-active" style="font-size:0.65rem;">Portal ✓</span>` : `<button class="btn btn-purple btn-sm" onclick="createLogisticsAccount('${l.id}','${l.name}')">Create Account</button>`}
+            <button class="btn btn-amber btn-sm" onclick="sendStockToLogistics('${l.id}','${l.name}')">Send Stock</button>
           </div>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
+
+    // Load stock allocations overview
+    loadStockAllocations(data);
   } catch(e) { showToast('Failed to load logistics', 'error'); }
+}
+
+async function loadStockAllocations(partners) {
+  const el = document.getElementById('stock-allocations-body');
+  if (!el) return;
+  try {
+    const allocs = await api(`logistics_stock?select=*,products(name),logistics_partners(name)&order=sent_at.desc`);
+    if (!allocs?.length) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);">No stock has been sent to logistics yet</div>'; return; }
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Partner</th><th>Product</th><th>Sent</th><th>Confirmed Received</th><th>Remaining</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>` +
+      allocs.map(a => `<tr>
+        <td class="td-name">${a.logistics_partners?.name||'—'}</td>
+        <td style="font-size:0.82rem;color:var(--text2)">${a.products?.name||'—'}</td>
+        <td class="td-mono">${a.quantity_sent}</td>
+        <td class="td-mono">${a.confirmed ? a.quantity_confirmed : '<span style="color:var(--amber)">Awaiting</span>'}</td>
+        <td class="td-mono" style="color:${(a.quantity_remaining||0)<=5?'var(--red)':'var(--green)'}">${a.confirmed ? a.quantity_remaining : '—'}</td>
+        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'Confirmed':'Pending'}</span></td>
+        <td style="font-size:0.75rem;color:var(--text3)">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
+      </tr>`).join('') +
+      `</tbody></table></div>`;
+  } catch(e) { el.innerHTML = '<div style="padding:16px;color:var(--text3);">Failed to load allocations</div>'; }
 }
 
 async function loadLogisticsPartners() {
@@ -2305,6 +2385,80 @@ async function loadLogisticsPartners() {
 }
 
 function openAddLogisticsModal() { document.getElementById('modal-add-logistics').classList.add('open'); }
+
+async function createLogisticsAccount(id, name) {
+  const email = prompt(`Enter email for ${name}:`);
+  if (!email) return;
+  const password = prompt(`Set password for ${name}:`, 'LivingWell2026');
+  if (!password || password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+  try {
+    // Create auth user
+    const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, email_confirm: true })
+    });
+    const authData = await authRes.json();
+    if (!authRes.ok) { showToast(authData.message || 'Failed to create account', 'error'); return; }
+    // Link user_id and email to logistics_partner
+    await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
+    showToast(`Portal account created for ${name}! Email: ${email}`, 'success');
+    loadLogisticsPage();
+  } catch(e) { showToast('Failed to create account: ' + e.message, 'error'); }
+}
+
+async function sendStockToLogistics(partnerId, partnerName) {
+  // Load products with current stock
+  const prods = await api(`products?is_active=eq.true&select=*,stock(quantity)&order=name`);
+  if (!prods?.length) { showToast('No products found', 'error'); return; }
+  // Populate modal
+  document.getElementById('send-stock-partner-id').value = partnerId;
+  document.getElementById('send-stock-partner-name').textContent = partnerName;
+  const sel = document.getElementById('send-stock-product-select');
+  sel.innerHTML = '<option value="">Select product...</option>' +
+    prods.map(p => `<option value="${p.id}" data-stock="${p.stock?.[0]?.quantity||0}">${p.name} (Stock: ${p.stock?.[0]?.quantity||0})</option>`).join('');
+  sel.onchange = function() {
+    const opt = sel.options[sel.selectedIndex];
+    const avail = parseInt(opt.dataset.stock||0);
+    document.getElementById('send-stock-available').textContent = `Available: ${avail} units`;
+    document.getElementById('send-stock-qty').max = avail;
+  };
+  document.getElementById('send-stock-available').textContent = '';
+  document.getElementById('send-stock-qty').value = '';
+  document.getElementById('modal-send-stock').classList.add('open');
+}
+
+async function confirmSendStock() {
+  const partnerId = document.getElementById('send-stock-partner-id').value;
+  const partnerName = document.getElementById('send-stock-partner-name').textContent;
+  const productId = document.getElementById('send-stock-product-select').value;
+  const qty = parseInt(document.getElementById('send-stock-qty').value);
+  const productName = document.getElementById('send-stock-product-select').options[document.getElementById('send-stock-product-select').selectedIndex]?.text?.split(' (')[0];
+  if (!productId) { showToast('Please select a product', 'error'); return; }
+  if (!qty || qty <= 0) { showToast('Please enter a valid quantity', 'error'); return; }
+  try {
+    // Insert logistics_stock allocation
+    await api(`logistics_stock`, 'POST', {
+      logistics_partner_id: partnerId,
+      product_id: productId,
+      quantity_sent: qty,
+      quantity_confirmed: 0,
+      quantity_remaining: 0,
+      confirmed: false,
+      sent_at: new Date().toISOString()
+    }, { Prefer: 'return=minimal' });
+    // Deduct from main stock
+    const mainStock = await api(`stock?product_id=eq.${productId}&select=*`);
+    if (mainStock?.length) {
+      const newQty = Math.max(0, (mainStock[0].quantity||0) - qty);
+      await api(`stock?product_id=eq.${productId}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
+    }
+    closeModal('modal-send-stock');
+    showToast(`${qty} units of ${productName} sent to ${partnerName}!`, 'success');
+    loadLogisticsPage();
+    loadStockPage();
+  } catch(e) { showToast('Failed to send stock: ' + e.message, 'error'); }
+}
 
 async function saveLogistics() {
   const name = document.getElementById('logi-name').value.trim();
