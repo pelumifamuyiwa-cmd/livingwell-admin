@@ -1817,6 +1817,32 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
+<!-- Edit Logistics Login Modal -->
+<div class="modal-overlay" id="modal-edit-logistics-login">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit Portal Login</div>
+      <div class="modal-sub">Updating login for: <strong id="ell-partner-name">—</strong></div>
+    </div>
+    <input type="hidden" id="ell-partner-id">
+    <input type="hidden" id="ell-user-id">
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">New Email Address <span style="color:var(--text3);font-weight:400;">(leave blank to keep current)</span></label>
+        <input type="email" class="form-input" id="ell-email" placeholder="new@email.com">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">New Password <span style="color:var(--text3);font-weight:400;">(leave blank to keep current)</span></label>
+        <input type="text" class="form-input" id="ell-password" placeholder="Enter new password">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-logistics-login')">Cancel</button>
+      <button class="btn btn-purple" onclick="saveLogisticsLogin()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Product Modal -->
 <div class="modal-overlay" id="modal-add-product">
   <div class="modal">
@@ -2711,7 +2737,7 @@ async function loadLogisticsPage() {
           <div class="row-actions">
             ${l.phone ? `<a href="https://wa.me/${l.phone.replace(/[^0-9]/g,'').replace(/^0/,'234')}" target="_blank" class="btn btn-green btn-sm" style="text-decoration:none;">WhatsApp</a>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="editLogistics('${l.id}','${l.name}','${l.phone||''}','${l.coverage_area||''}')">Edit</button>
-            ${l.user_id ? `<span class="badge badge-active" style="font-size:0.65rem;">Portal ✓</span>` : `<button class="btn btn-purple btn-sm" onclick="createLogisticsAccount('${l.id}','${l.name}')">Create Account</button>`}
+            ${l.user_id ? `<button class="btn btn-ghost btn-sm" onclick="editLogisticsLogin('${l.id}','${l.name}','${l.user_id}')">Edit Login</button>` : `<button class="btn btn-purple btn-sm" onclick="createLogisticsAccount('${l.id}','${l.name}')">Create Account</button>`}
             <button class="btn btn-amber btn-sm" onclick="sendStockToLogistics('${l.id}','${l.name}')">Send Stock</button>
             <button class="btn btn-blue btn-sm" onclick="viewPartnerStock('${l.id}','${l.name}')">View Stock</button>
           </div>
@@ -2871,6 +2897,48 @@ async function saveLogisticsAccount() {
     showToast(`Portal account created for ${name}!`, 'success');
     loadLogisticsPage();
   } catch(e) { showToast('Failed to create account: ' + e.message, 'error'); }
+}
+
+function editLogisticsLogin(partnerId, partnerName, userId) {
+  document.getElementById('ell-partner-id').value = partnerId;
+  document.getElementById('ell-partner-name').textContent = partnerName;
+  document.getElementById('ell-user-id').value = userId;
+  document.getElementById('ell-email').value = '';
+  document.getElementById('ell-password').value = '';
+  document.getElementById('modal-edit-logistics-login').classList.add('open');
+}
+
+async function saveLogisticsLogin() {
+  const partnerId = document.getElementById('ell-partner-id').value;
+  const userId = document.getElementById('ell-user-id').value;
+  const name = document.getElementById('ell-partner-name').textContent;
+  const email = document.getElementById('ell-email').value.trim();
+  const password = document.getElementById('ell-password').value.trim();
+
+  if (!email && !password) { showToast('Enter a new email or password to update', 'error'); return; }
+  if (password && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+
+  try {
+    const updates = {};
+    if (email) updates.email = email;
+    if (password) updates.password = password;
+
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) { const e = await res.json(); showToast(e.message || 'Failed to update login', 'error'); return; }
+
+    // Update email in logistics_partners table too if changed
+    if (email) {
+      await api(`logistics_partners?id=eq.${partnerId}`, 'PATCH', { email }, { Prefer: 'return=minimal' });
+    }
+
+    closeModal('modal-edit-logistics-login');
+    showToast(`Login updated for ${name}!`, 'success');
+    loadLogisticsPage();
+  } catch(e) { showToast('Failed to update login: ' + e.message, 'error'); }
 }
 
 async function sendStockToLogistics(partnerId, partnerName) {
