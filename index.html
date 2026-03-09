@@ -2068,7 +2068,7 @@ async function loadDashboard() {
     const pending = allOrders.filter(o => o.status === 'pending' || o.status === 'assigned').length;
     const unpaid = allOrders.filter(o => o.status === 'delivered_awaiting_payment').reduce((s,o) => s + parseFloat(o.total_price||0), 0);
 
-    document.getElementById('stat-orders').textContent = allOrders.length;
+    document.getElementById('stat-orders').textContent = allOrders.filter(o => o.status !== 'cancelled').length;
     document.getElementById('stat-revenue').textContent = '₦' + revenue.toLocaleString();
     document.getElementById('stat-pending').textContent = pending;
     document.getElementById('stat-unpaid').textContent = '₦' + unpaid.toLocaleString();
@@ -2098,8 +2098,9 @@ async function loadDashboard() {
     // Leaderboard
     const repOrders = {};
     allOrders.forEach(o => {
+      if (!o.rep_id || !o.profiles?.full_name) return;
       const id = o.rep_id;
-      if (!repOrders[id]) repOrders[id] = { name: o.profiles?.full_name || 'Unknown', ref: o.profiles?.ref_code || '—', count: 0 };
+      if (!repOrders[id]) repOrders[id] = { name: o.profiles.full_name, ref: o.profiles?.ref_code || '—', count: 0 };
       repOrders[id].count++;
     });
     const sorted = Object.values(repOrders).sort((a,b) => b.count - a.count).slice(0,5);
@@ -2644,18 +2645,23 @@ async function toggleRepStatus(id, isActive) {
 }
 
 async function deleteRep(id, name) {
-  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nThis will also remove all their orders from the system. This cannot be undone.`)) return;
+  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nAll their orders and data will be permanently removed. This cannot be undone.`)) return;
   try {
-    // 1. Nullify rep_id on all their orders (preserve order history but unlink rep)
-    await api(`orders?rep_id=eq.${id}`, 'PATCH', { rep_id: null }, { Prefer: 'return=minimal' });
-    // 2. Delete profile
+    // 1. Delete all deliveries linked to this rep's orders
+    const repOrders = await api(`orders?rep_id=eq.${id}&select=id`);
+    for (const o of (repOrders||[])) {
+      await api(`deliveries?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    }
+    // 2. Delete all orders belonging to this rep
+    await api(`orders?rep_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    // 3. Delete profile
     await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // 3. Delete auth user
+    // 4. Delete auth user
     await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
       method: 'DELETE',
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
     });
-    showToast(`${name} has been deleted`, 'success');
+    showToast(`${name} and all their data have been deleted`, 'success');
     loadReps();
   } catch(e) { showToast('Failed to delete rep: ' + e.message, 'error'); }
 }
@@ -2962,7 +2968,7 @@ async function loadPerformance() {
       }
     });
 
-    const sorted = Object.values(repStats).sort((a,b) => b.orders - a.orders);
+    const sorted = Object.values(repStats).filter(r => r.full_name && r.full_name !== 'Unknown').sort((a,b) => b.orders - a.orders);
     const el = document.getElementById('full-leaderboard');
 
     if (!sorted.length) { el.innerHTML = '<div class="empty-state"><p>No reps found</p></div>'; return; }
