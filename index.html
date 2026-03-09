@@ -2066,7 +2066,7 @@ async function loadDashboard() {
 
     const revenue = (payments||[]).reduce((s,p) => s + parseFloat(p.amount_received||0), 0);
     const pending = allOrders.filter(o => o.status === 'pending' || o.status === 'assigned').length;
-    const unpaid = allOrders.filter(o => !['delivered_payment_made'].includes(o.status)).reduce((s,o) => s + parseFloat(o.total_price||0), 0);
+    const unpaid = allOrders.filter(o => o.status === 'delivered_awaiting_payment').reduce((s,o) => s + parseFloat(o.total_price||0), 0);
 
     document.getElementById('stat-orders').textContent = allOrders.length;
     document.getElementById('stat-revenue').textContent = '₦' + revenue.toLocaleString();
