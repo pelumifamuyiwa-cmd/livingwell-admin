@@ -1952,7 +1952,8 @@ async function loadOrders() {
   try {
     const data = await api(`orders?select=*,products(name),profiles(full_name,ref_code)&order=created_at.desc`);
     allOrders = data || [];
-    renderOrders(allOrders);
+    // Default: hide cancelled orders
+    renderOrders(allOrders.filter(o => o.status !== 'cancelled'));
   } catch(e) { showToast('Failed to load orders', 'error'); }
 }
 
@@ -1990,8 +1991,12 @@ function filterOrders(val) {
 }
 
 function filterOrdersByStatus(status) {
-  const filtered = status ? allOrders.filter(o => o.status === status) : allOrders;
-  renderOrders(filtered);
+  if (!status) {
+    // Default: hide cancelled
+    renderOrders(allOrders.filter(o => o.status !== 'cancelled'));
+  } else {
+    renderOrders(allOrders.filter(o => o.status === status));
+  }
 }
 
 async function cancelOrder(id) {
