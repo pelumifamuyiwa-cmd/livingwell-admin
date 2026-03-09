@@ -1920,6 +1920,39 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
+<!-- Edit Order Modal -->
+<div class="modal-overlay" id="modal-edit-order">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit Order</div>
+      <div class="modal-sub">Only pending orders can be edited</div>
+    </div>
+    <input type="hidden" id="edit-order-id">
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Customer Name</label>
+        <input type="text" class="form-input" id="edit-customer-name" placeholder="Customer name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Customer Phone</label>
+        <input type="tel" class="form-input" id="edit-customer-phone" placeholder="08012345678">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Quantity</label>
+        <input type="number" class="form-input" id="edit-quantity" min="1" placeholder="1">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Delivery Location</label>
+        <input type="text" class="form-input" id="edit-location" placeholder="Delivery address">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-order')">Cancel</button>
+      <button class="btn btn-purple" onclick="saveEditOrder()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -2007,6 +2040,27 @@ async function checkSession() {
   } catch(e) {}
 }
 
+let autoRefreshInterval = null;
+
+function startAutoRefresh() {
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+  autoRefreshInterval = setInterval(async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const pending = await api(`orders?status=eq.pending&created_at=gte.${today}T00:00:00&select=id`);
+      const count = (pending||[]).length;
+      const badge = document.getElementById('pending-badge');
+      if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-flex' : 'none';
+      }
+      // If on dashboard, silently refresh
+      const dashActive = document.getElementById('page-dashboard')?.classList.contains('active');
+      if (dashActive) loadDashboard();
+    } catch(e) {}
+  }, 60000);
+}
+
 function initApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
@@ -2034,6 +2088,7 @@ function initApp() {
 
   loadDashboard();
   loadFinancials();
+  startAutoRefresh();
   loadLogisticsPartners();
   loadProducts();
   // Show weekly performance leaderboard every Saturday from 3pm
@@ -2316,6 +2371,7 @@ function renderOrders(orders) {
       <td>
         <div class="row-actions">
           ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
+          ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>` : ''}
           ${o.status === 'pending' ? `<button class="btn btn-red btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
         </div>
       </td>
@@ -2337,6 +2393,34 @@ function filterOrdersByStatus(status) {
   } else {
     renderOrders(allOrders.filter(o => o.status === status));
   }
+}
+
+function openEditOrderModal(id, name, phone, location, qty) {
+  document.getElementById('edit-order-id').value = id;
+  document.getElementById('edit-customer-name').value = name;
+  document.getElementById('edit-customer-phone').value = phone;
+  document.getElementById('edit-location').value = location;
+  document.getElementById('edit-quantity').value = qty;
+  document.getElementById('modal-edit-order').classList.add('open');
+}
+
+async function saveEditOrder() {
+  const id = document.getElementById('edit-order-id').value;
+  const customer_name = document.getElementById('edit-customer-name').value.trim();
+  const customer_phone = document.getElementById('edit-customer-phone').value.trim();
+  const delivery_location = document.getElementById('edit-location').value.trim();
+  const quantity = parseInt(document.getElementById('edit-quantity').value);
+  if (!customer_name || !delivery_location || !quantity) { showToast('Please fill all fields', 'error'); return; }
+  try {
+    // Get product price to recalculate total
+    const order = await api(`orders?id=eq.${id}&select=unit_price`);
+    const unit_price = order?.[0]?.unit_price || 0;
+    const total_price = unit_price * quantity;
+    await api(`orders?id=eq.${id}`, 'PATCH', { customer_name, customer_phone, delivery_location, quantity, total_price }, { Prefer: 'return=minimal' });
+    closeModal('modal-edit-order');
+    showToast('Order updated successfully!', 'success');
+    loadOrders();
+  } catch(e) { showToast('Failed to update order: ' + e.message, 'error'); }
 }
 
 async function cancelOrder(id) {
