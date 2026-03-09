@@ -504,7 +504,8 @@ body {
 .btn-red { background: var(--red-dim); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
 .btn-red:hover { background: rgba(244,63,94,0.25); }
 
-.btn-amber { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+.btn-blue { background: rgba(37,99,235,0.1); color: #2563EB; border-color: rgba(37,99,235,0.2); }
+  .btn-amber { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
 .btn-amber:hover { background: rgba(245,158,11,0.25); }
 
 .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
@@ -1372,6 +1373,44 @@ tr:hover td { background: rgba(255,255,255,0.02); }
           </table>
         </div>
       </div>
+
+      <!-- Stock Reports from Logistics -->
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Logistics Stock Reports</div>
+            <div class="card-sub">Daily delivery activity reported by logistics partners</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="filter-select" id="stock-report-period" onchange="loadStockReports()" style="font-size:0.75rem;padding:6px 10px;">
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="all">All Time</option>
+            </select>
+            <select class="filter-select" id="stock-report-partner" onchange="loadStockReports()" style="font-size:0.75rem;padding:6px 10px;">
+              <option value="">All Partners</option>
+            </select>
+          </div>
+        </div>
+        <!-- Summary stats -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid var(--border);">
+          <div style="text-align:center;padding:16px;border-right:1px solid var(--border);">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--green)" id="sr-total-delivered">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Units Delivered</div>
+          </div>
+          <div style="text-align:center;padding:16px;border-right:1px solid var(--border);">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--purple)" id="sr-total-value">₦0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Revenue Generated</div>
+          </div>
+          <div style="text-align:center;padding:16px;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--amber)" id="sr-partners-active">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Active Partners</div>
+          </div>
+        </div>
+        <div id="stock-reports-body">
+          <div class="loading">Loading stock reports...</div>
+        </div>
+      </div>
     </div>
 
     <!-- ══ RECONCILIATION PAGE ══ -->
@@ -1513,14 +1552,50 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
 
-      <!-- Stock Allocations Overview -->
-      <div class="card" style="margin-top:20px;">
+      <!-- Per-Partner Stock Detail Panel -->
+      <div class="card" style="margin-top:20px;" id="partner-stock-panel" style="display:none;">
         <div class="card-header">
-          <div class="card-title">Stock Allocations</div>
-          <div class="card-sub">What has been sent to each logistics partner</div>
+          <div>
+            <div class="card-title" id="partner-stock-title">Partner Stock</div>
+            <div class="card-sub" id="partner-stock-sub">Stock history & current balance</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="filter-select" id="partner-stock-period" onchange="renderPartnerStockView()" style="font-size:0.75rem;padding:6px 10px;">
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="closePartnerStockPanel()">✕ Close</button>
+          </div>
         </div>
-        <div id="stock-allocations-body">
-          <div class="loading">Loading allocations...</div>
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);">
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--purple)" id="ps-total-sent">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Total Sent</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--green)" id="ps-confirmed">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Confirmed</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--amber)" id="ps-pending-confirm">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Awaiting Confirm</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;" id="ps-remaining" style="color:var(--green)">0</div>
+            <div style="font-size:0.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;">Remaining</div>
+          </div>
+        </div>
+        <!-- Current Balance per product -->
+        <div style="padding:16px 20px 8px;">
+          <div style="font-size:0.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Current Balance by Product</div>
+          <div id="ps-balance-list"></div>
+        </div>
+        <!-- Full stock log -->
+        <div style="padding:0 20px 16px;">
+          <div style="font-size:0.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;margin-top:16px;">Stock Movement Log</div>
+          <div id="ps-log-list"></div>
         </div>
       </div>
     </div>
@@ -1885,7 +1960,7 @@ function showPage(page) {
 
   if (page === 'orders') loadOrders();
   else if (page === 'deliveries') loadDeliveries();
-  else if (page === 'stock') loadStock();
+  else if (page === 'stock') { loadStock(); loadStockReports(); }
   else if (page === 'reps') loadReps();
   else if (page === 'logistics') loadLogisticsPage();
   else if (page === 'performance') loadPerformance();
@@ -2154,6 +2229,94 @@ async function loadStock() {
   } catch(e) { showToast('Failed to load stock', 'error'); }
 }
 
+async function loadStockReports() {
+  const el = document.getElementById('stock-reports-body');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">Loading...</div>';
+
+  const period = document.getElementById('stock-report-period')?.value || 'today';
+  const partnerFilter = document.getElementById('stock-report-partner')?.value || '';
+
+  const now = new Date();
+  let dateFilter = '';
+  if (period === 'today') {
+    const today = now.toISOString().split('T')[0];
+    dateFilter = `&report_date=eq.${today}`;
+  } else if (period === 'week') {
+    const day = now.getDay();
+    const diffToMon = day===0?-6:1-day;
+    const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
+    dateFilter = `&report_date=gte.${monday.toISOString().split('T')[0]}`;
+  }
+  const partnerQ = partnerFilter ? `&logistics_partner_id=eq.${partnerFilter}` : '';
+
+  try {
+    // Populate partner filter dropdown once
+    const partnerSel = document.getElementById('stock-report-partner');
+    if (partnerSel && partnerSel.options.length <= 1) {
+      const partners = await api(`logistics_partners?select=id,name&order=name`);
+      (partners||[]).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        partnerSel.appendChild(opt);
+      });
+    }
+
+    const reports = await api(`stock_reports?select=*,products(name,price),logistics_partners(name)${dateFilter}${partnerQ}&order=report_date.desc`);
+    const data = reports || [];
+
+    // Summary stats
+    const totalDelivered = data.reduce((s,r) => s + (r.deliveries_made||0), 0);
+    const totalValue = data.reduce((s,r) => s + ((r.deliveries_made||0) * parseFloat(r.products?.price||0)), 0);
+    const activePartners = new Set(data.map(r=>r.logistics_partner_id)).size;
+    document.getElementById('sr-total-delivered').textContent = totalDelivered;
+    document.getElementById('sr-total-value').textContent = `₦${totalValue.toLocaleString()}`;
+    document.getElementById('sr-partners-active').textContent = activePartners;
+
+    if (!data.length) {
+      el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);">No stock reports for this period</div>';
+      return;
+    }
+
+    // Group by partner then by date
+    const grouped = {};
+    data.forEach(r => {
+      const pname = r.logistics_partners?.name || 'Unknown';
+      if (!grouped[pname]) grouped[pname] = [];
+      grouped[pname].push(r);
+    });
+
+    el.innerHTML = Object.entries(grouped).map(([partnerName, rows]) => {
+      const partnerTotal = rows.reduce((s,r) => s + (r.deliveries_made||0), 0);
+      const partnerValue = rows.reduce((s,r) => s + ((r.deliveries_made||0) * parseFloat(r.products?.price||0)), 0);
+      return `
+      <div style="border-bottom:2px solid var(--border);padding:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--bg2);">
+          <div style="font-weight:700;font-size:0.85rem;color:var(--text);">🚚 ${partnerName}</div>
+          <div style="display:flex;gap:16px;font-size:0.75rem;">
+            <span style="color:var(--green);font-weight:600;">${partnerTotal} units delivered</span>
+            <span style="color:var(--purple);font-weight:600;">₦${partnerValue.toLocaleString()}</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Product</th><th>Units Delivered</th><th>Value</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `<tr>
+                <td style="font-size:0.75rem;color:var(--text3);">${new Date(r.report_date).toLocaleDateString('en-NG',{weekday:'short',day:'numeric',month:'short'})}</td>
+                <td style="font-size:0.82rem;font-weight:600;">${r.products?.name||'—'}</td>
+                <td class="td-mono" style="color:var(--green);font-weight:700;">${r.deliveries_made||0}</td>
+                <td class="td-amount">₦${((r.deliveries_made||0)*parseFloat(r.products?.price||0)).toLocaleString()}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+
+  } catch(e) { el.innerHTML = '<div style="padding:16px;color:var(--text3);">Failed to load stock reports</div>'; }
+}
+
 function openUpdateStockModal(productId, productName, currentQty) {
   document.getElementById('update-stock-product-id').value = productId;
   document.getElementById('update-stock-product-name').textContent = productName;
@@ -2346,6 +2509,7 @@ async function loadLogisticsPage() {
             <button class="btn btn-ghost btn-sm" onclick="editLogistics('${l.id}','${l.name}','${l.phone||''}','${l.coverage_area||''}')">Edit</button>
             ${l.user_id ? `<span class="badge badge-active" style="font-size:0.65rem;">Portal ✓</span>` : `<button class="btn btn-purple btn-sm" onclick="createLogisticsAccount('${l.id}','${l.name}')">Create Account</button>`}
             <button class="btn btn-amber btn-sm" onclick="sendStockToLogistics('${l.id}','${l.name}')">Send Stock</button>
+            <button class="btn btn-blue btn-sm" onclick="viewPartnerStock('${l.id}','${l.name}')">View Stock</button>
           </div>
         </td>
       </tr>`;
@@ -2356,26 +2520,115 @@ async function loadLogisticsPage() {
   } catch(e) { showToast('Failed to load logistics', 'error'); }
 }
 
-async function loadStockAllocations(partners) {
-  const el = document.getElementById('stock-allocations-body');
-  if (!el) return;
+// ── PER-PARTNER STOCK ──
+let currentPartnerStockId = null;
+let currentPartnerStockData = [];
+
+async function viewPartnerStock(partnerId, partnerName) {
+  currentPartnerStockId = partnerId;
+  document.getElementById('partner-stock-title').textContent = `${partnerName} — Stock Account`;
+  document.getElementById('partner-stock-sub').textContent = `Individual stock history & current balance`;
+  document.getElementById('partner-stock-panel').style.display = 'block';
+  document.getElementById('partner-stock-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('ps-balance-list').innerHTML = '<div class="loading">Loading...</div>';
+  document.getElementById('ps-log-list').innerHTML = '';
   try {
-    const allocs = await api(`logistics_stock?select=*,products(name),logistics_partners(name)&order=sent_at.desc`);
-    if (!allocs?.length) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);">No stock has been sent to logistics yet</div>'; return; }
-    el.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Partner</th><th>Product</th><th>Sent</th><th>Confirmed Received</th><th>Remaining</th><th>Status</th><th>Date</th></tr></thead>
+    const allocs = await api(`logistics_stock?logistics_partner_id=eq.${partnerId}&select=*,products(name,price)&order=sent_at.desc`);
+    currentPartnerStockData = allocs || [];
+    renderPartnerStockView();
+  } catch(e) { showToast('Failed to load partner stock', 'error'); }
+}
+
+function renderPartnerStockView() {
+  const period = document.getElementById('partner-stock-period').value;
+  const now = new Date();
+  let data = currentPartnerStockData;
+
+  // Filter by period
+  if (period === 'today') {
+    const today = now.toISOString().split('T')[0];
+    data = data.filter(a => a.sent_at?.startsWith(today));
+  } else if (period === 'week') {
+    const day = now.getDay();
+    const diffToMon = day===0?-6:1-day;
+    const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
+    data = data.filter(a => new Date(a.sent_at) >= monday);
+  }
+
+  // Summary stats
+  const totalSent = data.reduce((s,a) => s + (a.quantity_sent||0), 0);
+  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_confirmed||0), 0);
+  const awaitingConfirm = data.filter(a=>!a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
+  const totalRemaining = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_remaining||0), 0);
+
+  document.getElementById('ps-total-sent').textContent = totalSent;
+  document.getElementById('ps-confirmed').textContent = totalConfirmed;
+  document.getElementById('ps-pending-confirm').textContent = awaitingConfirm;
+  document.getElementById('ps-remaining').textContent = totalRemaining;
+  document.getElementById('ps-remaining').style.color = totalRemaining <= 20 ? 'var(--red)' : 'var(--green)';
+
+  // Current balance per product (all time, confirmed only)
+  const allConfirmed = currentPartnerStockData.filter(a => a.confirmed);
+  const balanceMap = {};
+  allConfirmed.forEach(a => {
+    const pid = a.product_id;
+    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', remaining: 0, sent: 0 };
+    balanceMap[pid].remaining += a.quantity_remaining||0;
+    balanceMap[pid].sent += a.quantity_confirmed||0;
+  });
+
+  const balanceEl = document.getElementById('ps-balance-list');
+  const balanceEntries = Object.values(balanceMap);
+  if (!balanceEntries.length) {
+    balanceEl.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:8px 0;">No confirmed stock yet</div>';
+  } else {
+    balanceEl.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Product</th><th>Total Received</th><th>Remaining</th><th>Used</th></tr></thead>
       <tbody>` +
-      allocs.map(a => `<tr>
-        <td class="td-name">${a.logistics_partners?.name||'—'}</td>
-        <td style="font-size:0.82rem;color:var(--text2)">${a.products?.name||'—'}</td>
+      balanceEntries.map(b => {
+        const used = b.sent - b.remaining;
+        const pct = b.sent > 0 ? Math.round((b.remaining/b.sent)*100) : 0;
+        return `<tr>
+          <td style="font-weight:600;font-size:0.82rem;">${b.name}</td>
+          <td class="td-mono">${b.sent}</td>
+          <td class="td-mono" style="color:${b.remaining<=10?'var(--red)':'var(--green)'};font-weight:700;">${b.remaining} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
+          <td class="td-mono" style="color:var(--text3);">${used}</td>
+        </tr>`;
+      }).join('') +
+      `</tbody></table></div>`;
+  }
+
+  // Movement log (filtered by period)
+  const logEl = document.getElementById('ps-log-list');
+  if (!data.length) {
+    logEl.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:8px 0;">No stock movements in this period</div>';
+  } else {
+    logEl.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Product</th><th>Sent</th><th>Confirmed</th><th>Remaining</th><th>Status</th></tr></thead>
+      <tbody>` +
+      data.map(a => `<tr>
+        <td style="font-size:0.75rem;color:var(--text3);">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
+        <td style="font-size:0.82rem;font-weight:600;">${a.products?.name||'—'}</td>
         <td class="td-mono">${a.quantity_sent}</td>
-        <td class="td-mono">${a.confirmed ? a.quantity_confirmed : '<span style="color:var(--amber)">Awaiting</span>'}</td>
-        <td class="td-mono" style="color:${(a.quantity_remaining||0)<=5?'var(--red)':'var(--green)'}">${a.confirmed ? a.quantity_remaining : '—'}</td>
+        <td class="td-mono" style="color:${a.confirmed?'var(--green)':'var(--amber)'};">${a.confirmed ? a.quantity_confirmed : '—'}</td>
+        <td class="td-mono" style="color:${(a.quantity_remaining||0)<=10?'var(--red)':'var(--text2)'};">${a.confirmed ? a.quantity_remaining : '—'}</td>
         <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'Confirmed':'Pending'}</span></td>
-        <td style="font-size:0.75rem;color:var(--text3)">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
       </tr>`).join('') +
       `</tbody></table></div>`;
-  } catch(e) { el.innerHTML = '<div style="padding:16px;color:var(--text3);">Failed to load allocations</div>'; }
+  }
+}
+
+function closePartnerStockPanel() {
+  document.getElementById('partner-stock-panel').style.display = 'none';
+  currentPartnerStockId = null;
+  currentPartnerStockData = [];
+}
+
+async function loadStockAllocations(partners) {
+  // Panel is now opened per-partner via viewPartnerStock()
+  // Hide panel on initial load
+  const panel = document.getElementById('partner-stock-panel');
+  if (panel) panel.style.display = 'none';
 }
 
 async function loadLogisticsPartners() {
