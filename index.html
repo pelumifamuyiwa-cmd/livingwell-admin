@@ -1713,11 +1713,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="modal-sub">Select a logistics partner for this delivery</div>
     </div>
     <input type="hidden" id="assign-order-id">
-    <div class="form-group">
+    <div class="form-group" style="position:relative;">
       <label class="form-label">Logistics Partner</label>
-      <select class="form-input" id="assign-logistics-select">
-        <option value="">Select partner...</option>
-      </select>
+      <input type="text" class="form-input" id="assign-logistics-search" placeholder="Type to search partner..." autocomplete="off" oninput="filterLogisticsDropdown()" onfocus="openLogisticsDropdown()" style="cursor:text;">
+      <input type="hidden" id="assign-logistics-select">
+      <div id="assign-logistics-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:1px solid var(--purple);border-radius:12px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Notes (optional)</label>
@@ -2546,28 +2547,72 @@ async function cancelOrder(id) {
 }
 
 // ── ASSIGN LOGISTICS ──
+let _assignContext = {};
+
 function openAssignModal(orderId, customerName, productName, location, amount) {
   currentAssignOrderId = orderId;
+  _assignContext = { customerName, productName, location, amount };
   document.getElementById('assign-order-id').value = orderId;
+  document.getElementById('assign-logistics-search').value = '';
+  document.getElementById('assign-logistics-select').value = '';
+  document.getElementById('whatsapp-preview').style.display = 'none';
+  document.getElementById('whatsapp-send-btn').style.display = 'none';
+  document.getElementById('assign-logistics-dropdown').style.display = 'none';
   document.getElementById('modal-assign').classList.add('open');
-
-  const select = document.getElementById('assign-logistics-select');
-  select.innerHTML = '<option value="">Select partner...</option>' +
-    logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone||''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
-
-  select.onchange = () => {
-    const opt = select.options[select.selectedIndex];
-    const phone = opt.getAttribute('data-phone');
-    const lname = opt.getAttribute('data-name');
-    if (!phone || !opt.value) { document.getElementById('whatsapp-preview').style.display = 'none'; document.getElementById('whatsapp-send-btn').style.display = 'none'; return; }
-    const msg = `Hello ${lname},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
-    document.getElementById('whatsapp-msg-preview').textContent = msg;
-    document.getElementById('whatsapp-preview').style.display = 'block';
-    const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
-    document.getElementById('whatsapp-send-btn').href = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-    document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
-  };
 }
+
+function openLogisticsDropdown() {
+  renderLogisticsOptions(logisticsPartners);
+}
+
+function filterLogisticsDropdown() {
+  const q = document.getElementById('assign-logistics-search').value.toLowerCase();
+  const filtered = logisticsPartners.filter(l =>
+    l.name.toLowerCase().includes(q) || (l.coverage_area||'').toLowerCase().includes(q)
+  );
+  renderLogisticsOptions(filtered);
+}
+
+function renderLogisticsOptions(list) {
+  const dd = document.getElementById('assign-logistics-dropdown');
+  if (!list.length) {
+    dd.innerHTML = '<div style="padding:14px 16px;color:var(--text3);font-size:0.88rem;">No partners found</div>';
+  } else {
+    dd.innerHTML = list.map(l => `
+      <div onclick="selectLogisticsPartner('${l.id}','${l.name}','${l.phone||''}','${l.coverage_area||''}')"
+        style="padding:12px 16px;cursor:pointer;font-size:0.9rem;color:var(--text);border-bottom:1px solid var(--card-border);transition:background 0.15s;"
+        onmouseover="this.style.background='rgba(124,58,237,0.12)'" onmouseout="this.style.background=''"
+      >
+        <div style="font-weight:600;">${l.name}</div>
+        <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">${l.coverage_area||'No area set'}</div>
+      </div>`).join('');
+  }
+  dd.style.display = 'block';
+}
+
+function selectLogisticsPartner(id, name, phone, area) {
+  document.getElementById('assign-logistics-search').value = `${name} — ${area}`;
+  document.getElementById('assign-logistics-select').value = id;
+  document.getElementById('assign-logistics-dropdown').style.display = 'none';
+
+  const { customerName, productName, location, amount } = _assignContext;
+  if (!phone) { document.getElementById('whatsapp-preview').style.display = 'none'; document.getElementById('whatsapp-send-btn').style.display = 'none'; return; }
+  const msg = `Hello ${name},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
+  document.getElementById('whatsapp-msg-preview').textContent = msg;
+  document.getElementById('whatsapp-preview').style.display = 'block';
+  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
+  document.getElementById('whatsapp-send-btn').href = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+  document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('assign-logistics-dropdown');
+  const search = document.getElementById('assign-logistics-search');
+  if (dd && search && !dd.contains(e.target) && e.target !== search) {
+    dd.style.display = 'none';
+  }
+});
 
 async function saveAssignment() {
   const orderId = document.getElementById('assign-order-id').value;
@@ -2917,7 +2962,7 @@ async function saveRep() {
   try {
     const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
     let authData = {};
@@ -2960,7 +3005,7 @@ async function deleteRep(id, name) {
         await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         const delRes = await fetch(EDGE_FN, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
           body: JSON.stringify({ action: 'delete', user_id: id })
         });
         const delData = await delRes.json();
@@ -2977,7 +3022,7 @@ async function resetRepPassword(id, name) {
     try {
       const res = await fetch(EDGE_FN, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
         body: JSON.stringify({ action: 'reset_password', user_id: id, password: newPassword })
       });
       const data = await res.json();
@@ -3169,7 +3214,7 @@ async function saveLogisticsAccount() {
   try {
     const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
     let authData = {};
@@ -3209,7 +3254,7 @@ async function saveLogisticsLogin() {
 
     const res = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'reset_password', user_id: userId, ...updates })
     });
     const data = await res.json();
@@ -3315,7 +3360,7 @@ async function deleteLogisticsPartner(id, name, userId) {
         if (userId) {
           const delRes = await fetch(EDGE_FN, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
             body: JSON.stringify({ action: 'delete', user_id: userId })
           });
           const delData = await delRes.json();
@@ -3471,7 +3516,7 @@ async function saveNewPassword() {
     // Update password via Edge Function
     const res = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'reset_password', user_id: currentUser.id, password: newPw })
     });
     const data = await res.json();
