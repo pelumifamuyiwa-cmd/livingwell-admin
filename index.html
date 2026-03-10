@@ -3224,6 +3224,10 @@ async function saveLogisticsAccount() {
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create account', 'error'); return; }
     if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
+    // Create profile row so logistics portal login works
+    try {
+      await api(`profiles`, 'POST', { id: authData.id, full_name: name, email, role: 'logistics', is_active: true }, { Prefer: 'return=minimal' });
+    } catch(e) {} // ignore if already exists
     closeModal('modal-create-logistics-account');
     showToast(`Portal account created for ${name}!`, 'success');
     loadLogisticsPage();
@@ -3264,6 +3268,8 @@ async function saveLogisticsLogin() {
 
     if (email) {
       await api(`logistics_partners?id=eq.${partnerId}`, 'PATCH', { email }, { Prefer: 'return=minimal' });
+      // Keep profile row in sync
+      try { await api(`profiles?id=eq.${userId}`, 'PATCH', { email }, { Prefer: 'return=minimal' }); } catch(e) {}
     }
 
     closeModal('modal-edit-logistics-login');
