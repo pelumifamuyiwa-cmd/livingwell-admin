@@ -2133,7 +2133,11 @@ async function api(path, method = 'GET', body = null, extraHeaders = {}) {
     const err = await res.json();
     throw new Error(err.message || 'API error');
   }
-  if (res.status === 204) return null;
+  if (res.status === 204 || res.status === 201) {
+    const text = await res.text();
+    if (!text) return null;
+    try { return JSON.parse(text); } catch(e) { return null; }
+  }
   return res.json();
 }
 
