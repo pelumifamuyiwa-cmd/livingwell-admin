@@ -1154,25 +1154,26 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     </nav>
 
     <div class="sidebar-footer">
-      <div class="sidebar-user">
-        <div class="user-avatar" id="user-avatar-initials">OO</div>
+      <!-- User card — click avatar to open menu -->
+      <div class="sidebar-user" style="position:relative;">
+        <div class="user-avatar" id="user-avatar-initials" onclick="toggleUserMenu()" style="cursor:pointer;transition:box-shadow 0.15s;" title="Account options">OO</div>
         <div class="user-info">
           <div class="user-name" id="user-display-name">Olujide Oyelade</div>
           <div class="user-role" id="user-display-role">Owner</div>
         </div>
+        <!-- Dropdown menu -->
+        <div id="user-menu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;right:0;background:var(--card);border:1px solid var(--card-border);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4);z-index:999;">
+          <button onclick="openChangePassword();toggleUserMenu();" style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;background:none;border:none;color:var(--purple-light);font-size:0.82rem;font-family:inherit;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='var(--purple-dim)'" onmouseout="this.style.background='none'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Change Password
+          </button>
+          <div style="height:1px;background:var(--card-border);margin:0 10px;"></div>
+          <button onclick="openClearDataModal();toggleUserMenu();" style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;background:none;border:none;color:var(--red);font-size:0.82rem;font-family:inherit;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='none'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+            Clear Admin Data
+          </button>
+        </div>
       </div>
-      <button class="logout-btn" onclick="openChangePassword()" style="margin-bottom:6px;background:var(--purple-dim);color:var(--purple-light);border:1px solid rgba(124,58,237,0.2);">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
-        </svg>
-        Change Password
-      </button>
-      <button class="logout-btn" onclick="openClearDataModal()" style="margin-bottom:6px;background:rgba(244,63,94,0.08);color:var(--red);border:1px solid rgba(244,63,94,0.18);">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
-        </svg>
-        Clear Admin Data
-      </button>
       <button class="logout-btn" onclick="handleLogout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
@@ -3977,6 +3978,25 @@ function downloadReconPDF() {
     };
   }
 }
+
+// ── USER MENU TOGGLE ──
+function toggleUserMenu() {
+  const menu = document.getElementById('user-menu');
+  const avatar = document.getElementById('user-avatar-initials');
+  const isOpen = menu.style.display === 'block';
+  menu.style.display = isOpen ? 'none' : 'block';
+  avatar.style.boxShadow = isOpen ? '' : '0 0 0 3px rgba(124,58,237,0.5)';
+}
+
+// Close user menu when clicking outside
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('user-menu');
+  const avatar = document.getElementById('user-avatar-initials');
+  if (menu && menu.style.display === 'block' && !menu.contains(e.target) && e.target !== avatar) {
+    menu.style.display = 'none';
+    avatar.style.boxShadow = '';
+  }
+});
 
 // ── INIT ──
 checkSession();
