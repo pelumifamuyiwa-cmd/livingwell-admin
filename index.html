@@ -1960,6 +1960,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 const SUPABASE_URL = 'https://azjwjswjecnacddcozuu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTEyOTcsImV4cCI6MjA4ODYyNzI5N30.jojgbxPCkUC_czk19oeYF3b6FdbCQfpzzs9o8QdaXMs';
 const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzA1MTI5NywiZXhwIjoyMDg4NjI3Mjk3fQ.nleDthPd_ek7OQKuZU6E6di7EaOVoNrt9Q8SAeDdGOQ';
+const EDGE_FN = 'https://azjwjswjecnacddcozuu.supabase.co/functions/v1/manage-users';
 
 const headers = {
   'apikey': SUPABASE_KEY,
@@ -2803,14 +2804,13 @@ async function saveRep() {
   if (!fullname || !email || !password) { showToast('Please fill all required fields', 'error'); return; }
 
   try {
-    // Create auth user via Supabase admin (using service role would be ideal but we use anon + insert profile)
-    const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, email_confirm: true })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ action: 'create', email, password })
     });
     const authData = await authRes.json();
-    if (!authRes.ok) { showToast(authData.message || 'Failed to create user', 'error'); return; }
+    if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create user', 'error'); return; }
 
     await api(`profiles`, 'POST', { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true }, { Prefer: 'return=minimal' });
 
@@ -2836,20 +2836,19 @@ async function toggleRepStatus(id, isActive) {
 async function deleteRep(id, name) {
   if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nAll their orders and data will be permanently removed. This cannot be undone.`)) return;
   try {
-    // 1. Delete all deliveries linked to this rep's orders
     const repOrders = await api(`orders?rep_id=eq.${id}&select=id`);
     for (const o of (repOrders||[])) {
       await api(`deliveries?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
     }
-    // 2. Delete all orders belonging to this rep
     await api(`orders?rep_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // 3. Delete profile
     await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // 4. Delete auth user
-    await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
-      method: 'DELETE',
-      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
+    const delRes = await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ action: 'delete', user_id: id })
     });
+    const delData = await delRes.json();
+    if (delData.error) { showToast(delData.error, 'error'); return; }
     showToast(`${name} and all their data have been deleted`, 'success');
     loadReps();
   } catch(e) { showToast('Failed to delete rep: ' + e.message, 'error'); }
@@ -2859,12 +2858,13 @@ async function resetRepPassword(id, name) {
   const newPassword = prompt(`Set new password for ${name}:`, 'LivingWell2026');
   if (!newPassword || newPassword.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
   try {
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
-      method: 'PUT',
-      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: newPassword })
+    const res = await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ action: 'reset_password', user_id: id, password: newPassword })
     });
-    if (!res.ok) { const e = await res.json(); showToast(e.message || 'Failed to reset password', 'error'); return; }
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
     showToast(`Password reset for ${name}! New password: ${newPassword}`, 'success');
   } catch(e) { showToast('Failed to reset password: ' + e.message, 'error'); }
 }
@@ -2903,6 +2903,7 @@ async function loadLogisticsPage() {
             ${l.user_id ? `<button class="btn btn-ghost btn-sm" onclick="editLogisticsLogin('${l.id}','${l.name}','${l.user_id}')">Edit Login</button>` : `<button class="btn btn-purple btn-sm" onclick="createLogisticsAccount('${l.id}','${l.name}')">Create Account</button>`}
             <button class="btn btn-amber btn-sm" onclick="sendStockToLogistics('${l.id}','${l.name}')">Send Stock</button>
             <button class="btn btn-blue btn-sm" onclick="viewPartnerStock('${l.id}','${l.name}')">View Stock</button>
+            <button class="btn btn-red btn-sm" onclick="deleteLogisticsPartner('${l.id}','${l.name}','${l.user_id||''}')">Delete</button>
           </div>
         </td>
       </tr>`;
@@ -3048,13 +3049,13 @@ async function saveLogisticsAccount() {
   if (!email) { showToast('Please enter an email address', 'error'); return; }
   if (!password || password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
   try {
-    const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, email_confirm: true })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ action: 'create', email, password })
     });
     const authData = await authRes.json();
-    if (!authRes.ok) { showToast(authData.message || 'Failed to create account', 'error'); return; }
+    if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create account', 'error'); return; }
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
     closeModal('modal-create-logistics-account');
     showToast(`Portal account created for ${name}!`, 'success');
@@ -3086,14 +3087,14 @@ async function saveLogisticsLogin() {
     if (email) updates.email = email;
     if (password) updates.password = password;
 
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-      method: 'PUT',
-      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
+    const res = await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ action: 'reset_password', user_id: userId, ...updates })
     });
-    if (!res.ok) { const e = await res.json(); showToast(e.message || 'Failed to update login', 'error'); return; }
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
 
-    // Update email in logistics_partners table too if changed
     if (email) {
       await api(`logistics_partners?id=eq.${partnerId}`, 'PATCH', { email }, { Prefer: 'return=minimal' });
     }
@@ -3179,6 +3180,32 @@ function editLogistics(id, name, phone, area) {
   document.getElementById('logi-phone').value = phone;
   document.getElementById('logi-area').value = area;
   document.getElementById('modal-add-logistics').classList.add('open');
+}
+
+async function deleteLogisticsPartner(id, name, userId) {
+  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nThis will remove their portal access and all associated stock records. This cannot be undone.`)) return;
+  try {
+    // Delete logistics_stock records
+    await api(`logistics_stock?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    // Delete deliveries linked to this partner
+    await api(`deliveries?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    // Delete stock_reports
+    await api(`stock_reports?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    // Delete the partner record
+    await api(`logistics_partners?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+    // Delete auth user if they have a portal account
+    if (userId) {
+      const delRes = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ action: 'delete', user_id: userId })
+      });
+      const delData = await delRes.json();
+      if (delData.error) { showToast(delData.error, 'error'); return; }
+    }
+    showToast(`${name} has been permanently deleted`, 'success');
+    loadLogisticsPage();
+  } catch(e) { showToast('Failed to delete partner: ' + e.message, 'error'); }
 }
 
 // ── PERFORMANCE ──
