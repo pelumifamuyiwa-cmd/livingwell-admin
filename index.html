@@ -366,16 +366,16 @@ body {
 /* ── STAT CARDS ── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
   background: var(--bg3);
   border: 1px solid var(--card-border);
-  border-radius: 20px;
-  padding: 24px;
+  border-radius: 14px;
+  padding: 14px 16px;
   position: relative;
   overflow: hidden;
   transition: transform 0.2s, box-shadow 0.2s;
@@ -391,10 +391,10 @@ body {
   content: '';
   position: absolute;
   top: 0; right: 0;
-  width: 80px; height: 80px;
+  width: 50px; height: 50px;
   border-radius: 50%;
   opacity: 0.08;
-  transform: translate(20px, -20px);
+  transform: translate(12px, -12px);
 }
 
 .stat-card.purple::before { background: var(--purple); }
@@ -404,10 +404,10 @@ body {
 .stat-card.blue::before { background: var(--blue); }
 
 .stat-icon-wrap {
-  width: 44px; height: 44px;
-  border-radius: 14px;
+  width: 30px; height: 30px;
+  border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .stat-card.purple .stat-icon-wrap { background: var(--purple-dim); }
@@ -416,7 +416,7 @@ body {
 .stat-card.red .stat-icon-wrap { background: var(--red-dim); }
 .stat-card.blue .stat-icon-wrap { background: var(--blue-dim); }
 
-.stat-icon-wrap svg { width: 20px; height: 20px; }
+.stat-icon-wrap svg { width: 14px; height: 14px; }
 .stat-card.purple .stat-icon-wrap svg { color: var(--purple-light); }
 .stat-card.green .stat-icon-wrap svg { color: var(--green); }
 .stat-card.amber .stat-icon-wrap svg { color: var(--amber); }
@@ -424,19 +424,19 @@ body {
 .stat-card.blue .stat-icon-wrap svg { color: var(--blue); }
 
 .stat-label {
-  font-size: 0.72rem; font-weight: 600;
+  font-size: 0.62rem; font-weight: 600;
   color: var(--text3);
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .stat-value {
   font-family: 'Playfair Display', serif;
-  font-size: 2rem; font-weight: 700;
+  font-size: 1.25rem; font-weight: 700;
   color: var(--white);
   line-height: 1;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 
 .stat-card.purple .stat-value { color: var(--purple-light); }
@@ -445,7 +445,7 @@ body {
 .stat-card.red .stat-value { color: var(--red); }
 .stat-card.blue .stat-value { color: var(--blue); }
 
-.stat-sub { font-size: 0.75rem; color: var(--text3); }
+.stat-sub { font-size: 0.67rem; color: var(--text3); }
 
 /* ── CARDS ── */
 .card {
@@ -1713,12 +1713,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="modal-sub">Select a logistics partner for this delivery</div>
     </div>
     <input type="hidden" id="assign-order-id">
-    <div class="form-group" style="position:relative;">
+    <div class="form-group">
       <label class="form-label">Logistics Partner</label>
-      <input type="text" class="form-input" id="assign-logistics-search" placeholder="Type to search partner..." autocomplete="off" oninput="filterLogisticsDropdown()" onfocus="openLogisticsDropdown()" style="cursor:text;">
-      <input type="hidden" id="assign-logistics-select">
-      <div id="assign-logistics-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:1px solid var(--purple);border-radius:12px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
-      </div>
+      <select class="form-input" id="assign-logistics-select">
+        <option value="">Select partner...</option>
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">Notes (optional)</label>
@@ -2194,8 +2193,6 @@ function initApp() {
   startAutoRefresh();
   loadLogisticsPartners();
   loadProducts();
-  startAdminRealtimeListener();
-  showNotifBannerIfNeeded();
   // Show weekly performance leaderboard every Saturday from 3pm
   setTimeout(loadWeeklyPerformance, 1800);
 }
@@ -2549,72 +2546,28 @@ async function cancelOrder(id) {
 }
 
 // ── ASSIGN LOGISTICS ──
-let _assignContext = {};
-
 function openAssignModal(orderId, customerName, productName, location, amount) {
   currentAssignOrderId = orderId;
-  _assignContext = { customerName, productName, location, amount };
   document.getElementById('assign-order-id').value = orderId;
-  document.getElementById('assign-logistics-search').value = '';
-  document.getElementById('assign-logistics-select').value = '';
-  document.getElementById('whatsapp-preview').style.display = 'none';
-  document.getElementById('whatsapp-send-btn').style.display = 'none';
-  document.getElementById('assign-logistics-dropdown').style.display = 'none';
   document.getElementById('modal-assign').classList.add('open');
+
+  const select = document.getElementById('assign-logistics-select');
+  select.innerHTML = '<option value="">Select partner...</option>' +
+    logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone||''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
+
+  select.onchange = () => {
+    const opt = select.options[select.selectedIndex];
+    const phone = opt.getAttribute('data-phone');
+    const lname = opt.getAttribute('data-name');
+    if (!phone || !opt.value) { document.getElementById('whatsapp-preview').style.display = 'none'; document.getElementById('whatsapp-send-btn').style.display = 'none'; return; }
+    const msg = `Hello ${lname},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
+    document.getElementById('whatsapp-msg-preview').textContent = msg;
+    document.getElementById('whatsapp-preview').style.display = 'block';
+    const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
+    document.getElementById('whatsapp-send-btn').href = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
+  };
 }
-
-function openLogisticsDropdown() {
-  renderLogisticsOptions(logisticsPartners);
-}
-
-function filterLogisticsDropdown() {
-  const q = document.getElementById('assign-logistics-search').value.toLowerCase();
-  const filtered = logisticsPartners.filter(l =>
-    l.name.toLowerCase().includes(q) || (l.coverage_area||'').toLowerCase().includes(q)
-  );
-  renderLogisticsOptions(filtered);
-}
-
-function renderLogisticsOptions(list) {
-  const dd = document.getElementById('assign-logistics-dropdown');
-  if (!list.length) {
-    dd.innerHTML = '<div style="padding:14px 16px;color:var(--text3);font-size:0.88rem;">No partners found</div>';
-  } else {
-    dd.innerHTML = list.map(l => `
-      <div onclick="selectLogisticsPartner('${l.id}','${l.name}','${l.phone||''}','${l.coverage_area||''}')"
-        style="padding:12px 16px;cursor:pointer;font-size:0.9rem;color:var(--text);border-bottom:1px solid var(--card-border);transition:background 0.15s;"
-        onmouseover="this.style.background='rgba(124,58,237,0.12)'" onmouseout="this.style.background=''"
-      >
-        <div style="font-weight:600;">${l.name}</div>
-        <div style="font-size:0.78rem;color:var(--text3);margin-top:2px;">${l.coverage_area||'No area set'}</div>
-      </div>`).join('');
-  }
-  dd.style.display = 'block';
-}
-
-function selectLogisticsPartner(id, name, phone, area) {
-  document.getElementById('assign-logistics-search').value = `${name} — ${area}`;
-  document.getElementById('assign-logistics-select').value = id;
-  document.getElementById('assign-logistics-dropdown').style.display = 'none';
-
-  const { customerName, productName, location, amount } = _assignContext;
-  if (!phone) { document.getElementById('whatsapp-preview').style.display = 'none'; document.getElementById('whatsapp-send-btn').style.display = 'none'; return; }
-  const msg = `Hello ${name},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
-  document.getElementById('whatsapp-msg-preview').textContent = msg;
-  document.getElementById('whatsapp-preview').style.display = 'block';
-  const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
-  document.getElementById('whatsapp-send-btn').href = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-  document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function(e) {
-  const dd = document.getElementById('assign-logistics-dropdown');
-  const search = document.getElementById('assign-logistics-search');
-  if (dd && search && !dd.contains(e.target) && e.target !== search) {
-    dd.style.display = 'none';
-  }
-});
 
 async function saveAssignment() {
   const orderId = document.getElementById('assign-order-id').value;
@@ -3116,9 +3069,9 @@ function renderPartnerStockView() {
 
   // Summary stats
   const totalSent = data.reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
+  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_confirmed||0), 0);
   const awaitingConfirm = data.filter(a=>!a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalRemaining = 0; // tracked via main stock table
+  const totalRemaining = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_remaining||0), 0);
 
   document.getElementById('ps-total-sent').textContent = totalSent;
   document.getElementById('ps-confirmed').textContent = totalConfirmed;
@@ -3126,13 +3079,14 @@ function renderPartnerStockView() {
   document.getElementById('ps-remaining').textContent = totalRemaining;
   document.getElementById('ps-remaining').style.color = totalRemaining <= 20 ? 'var(--red)' : 'var(--green)';
 
-  // Current balance per product (all time, all records)
+  // Current balance per product (all time, confirmed only)
+  const allConfirmed = currentPartnerStockData.filter(a => a.confirmed);
   const balanceMap = {};
-  currentPartnerStockData.forEach(a => {
+  allConfirmed.forEach(a => {
     const pid = a.product_id;
-    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', sent: 0, confirmed: 0 };
-    balanceMap[pid].sent += a.quantity_sent||0;
-    if (a.confirmed) balanceMap[pid].confirmed += a.quantity_sent||0;
+    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', remaining: 0, sent: 0 };
+    balanceMap[pid].remaining += a.quantity_remaining||0;
+    balanceMap[pid].sent += a.quantity_confirmed||0;
   });
 
   const balanceEl = document.getElementById('ps-balance-list');
@@ -3144,13 +3098,13 @@ function renderPartnerStockView() {
       <thead><tr><th>Product</th><th>Total Received</th><th>Remaining</th><th>Used</th></tr></thead>
       <tbody>` +
       balanceEntries.map(b => {
-        const pending = b.sent - b.confirmed;
-        const pct = b.sent > 0 ? Math.round((b.confirmed/b.sent)*100) : 0;
+        const used = b.sent - b.remaining;
+        const pct = b.sent > 0 ? Math.round((b.remaining/b.sent)*100) : 0;
         return `<tr>
           <td style="font-weight:600;font-size:0.82rem;">${b.name}</td>
           <td class="td-mono">${b.sent}</td>
-          <td class="td-mono" style="color:var(--green);font-weight:700;">${b.confirmed} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
-          <td class="td-mono" style="color:${pending>0?'var(--amber)':'var(--text3)'};">${pending}</td>
+          <td class="td-mono" style="color:${b.remaining<=10?'var(--red)':'var(--green)'};font-weight:700;">${b.remaining} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
+          <td class="td-mono" style="color:var(--text3);">${used}</td>
         </tr>`;
       }).join('') +
       `</tbody></table></div>`;
@@ -3162,13 +3116,15 @@ function renderPartnerStockView() {
     logEl.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:8px 0;">No stock movements in this period</div>';
   } else {
     logEl.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Product</th><th>Qty Sent</th><th>Status</th></tr></thead>
+      <thead><tr><th>Date</th><th>Product</th><th>Sent</th><th>Confirmed</th><th>Remaining</th><th>Status</th></tr></thead>
       <tbody>` +
       data.map(a => `<tr>
         <td style="font-size:0.75rem;color:var(--text3);">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
         <td style="font-size:0.82rem;font-weight:600;">${a.products?.name||'—'}</td>
         <td class="td-mono">${a.quantity_sent}</td>
-        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'✓ Confirmed':'Awaiting'}</span></td>
+        <td class="td-mono" style="color:${a.confirmed?'var(--green)':'var(--amber)'};">${a.confirmed ? a.quantity_confirmed : '—'}</td>
+        <td class="td-mono" style="color:${(a.quantity_remaining||0)<=10?'var(--red)':'var(--text2)'};">${a.confirmed ? a.quantity_remaining : '—'}</td>
+        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'Confirmed':'Pending'}</span></td>
       </tr>`).join('') +
       `</tbody></table></div>`;
   }
@@ -3221,10 +3177,6 @@ async function saveLogisticsAccount() {
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create account', 'error'); return; }
     if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
-    // Create profile row so logistics portal login works
-    try {
-      await api(`profiles`, 'POST', { id: authData.id, full_name: name, email, role: 'logistics', is_active: true }, { Prefer: 'return=minimal' });
-    } catch(e) {} // ignore if already exists
     closeModal('modal-create-logistics-account');
     showToast(`Portal account created for ${name}!`, 'success');
     loadLogisticsPage();
@@ -3265,8 +3217,6 @@ async function saveLogisticsLogin() {
 
     if (email) {
       await api(`logistics_partners?id=eq.${partnerId}`, 'PATCH', { email }, { Prefer: 'return=minimal' });
-      // Keep profile row in sync
-      try { await api(`profiles?id=eq.${userId}`, 'PATCH', { email }, { Prefer: 'return=minimal' }); } catch(e) {}
     }
 
     closeModal('modal-edit-logistics-login');
@@ -3310,19 +3260,21 @@ async function confirmSendStock() {
       logistics_partner_id: partnerId,
       product_id: productId,
       quantity_sent: qty,
+      quantity_confirmed: 0,
+      quantity_remaining: 0,
       confirmed: false,
       sent_at: new Date().toISOString()
     }, { Prefer: 'return=minimal' });
-    // Deduct from main stock immediately
+    // Deduct from main stock
     const mainStock = await api(`stock?product_id=eq.${productId}&select=*`);
     if (mainStock?.length) {
-      const newQty = Math.max(0, (parseInt(mainStock[0].quantity)||0) - qty);
-      await api(`stock?product_id=eq.${productId}`, 'PATCH', { quantity: newQty, updated_at: new Date().toISOString() }, { Prefer: 'return=minimal' });
+      const newQty = Math.max(0, (mainStock[0].quantity||0) - qty);
+      await api(`stock?product_id=eq.${productId}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
     }
     closeModal('modal-send-stock');
-    showToast(`✅ ${qty} units of ${productName} sent to ${partnerName}!`, 'success');
+    showToast(`${qty} units of ${productName} sent to ${partnerName}!`, 'success');
     loadLogisticsPage();
-    loadStock();
+    loadStockPage();
   } catch(e) { showToast('Failed to send stock: ' + e.message, 'error'); }
 }
 
@@ -3695,97 +3647,7 @@ async function loadWeeklyPerformance() {
 function closeWeeklyPerf() {
   document.getElementById('weekly-perf-overlay').classList.remove('show');
 }
-
-// ── PUSH NOTIFICATIONS ──
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
-}
-
-async function enableNotifications() {
-  const banner = document.getElementById('notif-banner');
-  const perm = await Notification.requestPermission();
-  if (perm === 'granted') {
-    banner.style.display = 'none';
-    localStorage.setItem('lw_admin_notif_accepted', '1');
-    new Notification('🔔 Living Well Admin', { body: 'Notifications enabled! You\'ll be pinged for new orders.', icon: '/icon.png' });
-  } else {
-    banner.style.display = 'none';
-    localStorage.setItem('lw_admin_notif_declined', '1');
-  }
-}
-
-function dismissNotifBanner() {
-  document.getElementById('notif-banner').style.display = 'none';
-  localStorage.setItem('lw_admin_notif_declined', '1');
-}
-
-function showNotifBannerIfNeeded() {
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'granted') return;
-  if (Notification.permission === 'denied') return;
-  if (localStorage.getItem('lw_admin_notif_accepted') || localStorage.getItem('lw_admin_notif_declined')) return;
-  setTimeout(() => { document.getElementById('notif-banner').style.display = 'flex'; }, 2000);
-}
-
-// Supabase Realtime — admin listens for ALL new orders
-let adminRealtimeWs = null;
-function startAdminRealtimeListener() {
-  if (adminRealtimeWs) return;
-  const wsUrl = `${SUPABASE_URL.replace('https','wss')}/realtime/v1/websocket?apikey=${SUPABASE_KEY}&vsn=1.0.0`;
-  const ws = new WebSocket(wsUrl);
-  adminRealtimeWs = ws;
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ topic: 'realtime:public:orders', event: 'phx_join', payload: {}, ref: '1' }));
-  };
-
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.event === 'INSERT' && msg.payload?.record) {
-        const rec = msg.payload.record;
-        triggerAdminNotification('🛍️ New Order', `${rec.customer_name || 'A customer'} placed a new order`);
-        loadDashboard(); loadOrders();
-      }
-    } catch(err) {}
-  };
-
-  setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: '0' })); }, 25000);
-}
-
-function triggerAdminNotification(title, body) {
-  if (Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/icon.png', vibrate: [200, 100, 200] });
-  }
-  showToast(`${title}: ${body}`, 'success');
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.frequency.setValueAtTime(880, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
-    g.gain.setValueAtTime(0.3, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.5);
-  } catch(e) {}
-}
 </script>
-
-<!-- Notification Permission Banner -->
-<div id="notif-banner" style="display:none;position:fixed;bottom:24px;left:16px;right:16px;background:linear-gradient(135deg,#1a1035,#2d1b6b);border:1px solid rgba(124,58,237,0.4);border-radius:18px;padding:18px 20px;z-index:2000;box-shadow:0 8px 32px rgba(0,0,0,0.5);align-items:flex-start;gap:14px;max-width:520px;margin:0 auto;">
-  <div style="font-size:1.6rem;line-height:1;">🔔</div>
-  <div style="flex:1;">
-    <div style="font-weight:700;font-size:0.95rem;color:#fff;margin-bottom:4px;">Enable order alerts</div>
-    <div style="font-size:0.82rem;color:rgba(255,255,255,0.65);margin-bottom:14px;line-height:1.5;">Get notified instantly when a new order comes in — even when you're on another tab.</div>
-    <div style="display:flex;gap:10px;">
-      <button onclick="enableNotifications()" style="background:linear-gradient(135deg,#7C3AED,#9F67FA);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:0.85rem;font-weight:600;cursor:pointer;">Enable Notifications</button>
-      <button onclick="dismissNotifBanner()" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);border:none;border-radius:10px;padding:9px 14px;font-size:0.85rem;cursor:pointer;">Not now</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── WEEKLY PERFORMANCE OVERLAY ── -->
 <div id="weekly-perf-overlay">
