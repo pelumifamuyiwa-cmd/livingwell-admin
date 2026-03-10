@@ -1956,6 +1956,69 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- Confirm Delete Modal -->
+<div class="modal-overlay" id="modal-confirm-delete">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" style="color:#f43f5e;">⚠ Confirm Delete</div>
+        <div class="modal-sub" id="confirm-delete-sub">This action cannot be undone.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-delete-msg" style="color:var(--text2);font-size:0.88rem;line-height:1.6;margin-bottom:0;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-confirm-delete')">Cancel</button>
+      <button class="btn btn-red" id="confirm-delete-btn">Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal-overlay" id="modal-reset-password">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Reset Password</div>
+        <div class="modal-sub" id="reset-pw-sub">Set a new password</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="text" class="form-input" id="reset-pw-input" placeholder="Enter new password" value="LivingWell2026">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-reset-password')">Cancel</button>
+      <button class="btn btn-purple" id="reset-pw-btn">Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Product Price Modal -->
+<div class="modal-overlay" id="modal-edit-price">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Update Price</div>
+        <div class="modal-sub" id="edit-price-sub">Set new price</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">New Price (₦)</label>
+        <input type="number" class="form-input" id="edit-price-input" placeholder="Enter new price" min="0">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-price')">Cancel</button>
+      <button class="btn btn-purple" id="edit-price-btn">Update Price</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://azjwjswjecnacddcozuu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTEyOTcsImV4cCI6MjA4ODYyNzI5N30.jojgbxPCkUC_czk19oeYF3b6FdbCQfpzzs9o8QdaXMs';
@@ -2430,12 +2493,18 @@ async function saveEditOrder() {
 }
 
 async function cancelOrder(id) {
-  if (!confirm('Cancel this order?')) return;
-  try {
-    await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled' }, { Prefer: 'return=minimal' });
-    showToast('Order cancelled', 'success');
-    loadOrders();
-  } catch(e) { showToast('Failed to cancel order', 'error'); }
+  showConfirmDelete(
+    `Cancel Order`,
+    `Are you sure you want to cancel this order? The rep will be notified.`,
+    async () => {
+      try {
+        await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled' }, { Prefer: 'return=minimal' });
+        showToast('Order cancelled', 'success');
+        loadOrders();
+      } catch(e) { showToast('Failed to cancel order', 'error'); }
+    },
+    'Cancel Order'
+  );
 }
 
 // ── ASSIGN LOGISTICS ──
@@ -2840,39 +2909,44 @@ async function toggleRepStatus(id, isActive) {
 }
 
 async function deleteRep(id, name) {
-  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nAll their orders and data will be permanently removed. This cannot be undone.`)) return;
-  try {
-    const repOrders = await api(`orders?rep_id=eq.${id}&select=id`);
-    for (const o of (repOrders||[])) {
-      await api(`deliveries?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+  showConfirmDelete(
+    `Delete ${name}`,
+    `All their orders and data will be permanently removed. This cannot be undone.`,
+    async () => {
+      try {
+        const repOrders = await api(`orders?rep_id=eq.${id}&select=id`);
+        for (const o of (repOrders||[])) {
+          await api(`deliveries?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        }
+        await api(`orders?rep_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        const delRes = await fetch(EDGE_FN, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+          body: JSON.stringify({ action: 'delete', user_id: id })
+        });
+        const delData = await delRes.json();
+        if (delData.error) { showToast(delData.error, 'error'); return; }
+        showToast(`${name} and all their data have been deleted`, 'success');
+        loadReps();
+      } catch(e) { showToast('Failed to delete rep: ' + e.message, 'error'); }
     }
-    await api(`orders?rep_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    const delRes = await fetch(EDGE_FN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ action: 'delete', user_id: id })
-    });
-    const delData = await delRes.json();
-    if (delData.error) { showToast(delData.error, 'error'); return; }
-    showToast(`${name} and all their data have been deleted`, 'success');
-    loadReps();
-  } catch(e) { showToast('Failed to delete rep: ' + e.message, 'error'); }
+  );
 }
 
 async function resetRepPassword(id, name) {
-  const newPassword = prompt(`Set new password for ${name}:`, 'LivingWell2026');
-  if (!newPassword || newPassword.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
-  try {
-    const res = await fetch(EDGE_FN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ action: 'reset_password', user_id: id, password: newPassword })
-    });
-    const data = await res.json();
-    if (data.error) { showToast(data.error, 'error'); return; }
-    showToast(`Password reset for ${name}! New password: ${newPassword}`, 'success');
-  } catch(e) { showToast('Failed to reset password: ' + e.message, 'error'); }
+  showResetPassword(name, async (newPassword) => {
+    try {
+      const res = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ action: 'reset_password', user_id: id, password: newPassword })
+      });
+      const data = await res.json();
+      if (data.error) { showToast(data.error, 'error'); return; }
+      showToast(`Password reset for ${name}! New password: ${newPassword}`, 'success');
+    } catch(e) { showToast('Failed to reset password: ' + e.message, 'error'); }
+  });
 }
 
 // ── LOGISTICS PAGE ──
@@ -3191,29 +3265,29 @@ function editLogistics(id, name, phone, area) {
 }
 
 async function deleteLogisticsPartner(id, name, userId) {
-  if (!confirm(`Are you sure you want to permanently delete ${name}?\n\nThis will remove their portal access and all associated stock records. This cannot be undone.`)) return;
-  try {
-    // Delete logistics_stock records
-    await api(`logistics_stock?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // Delete deliveries linked to this partner
-    await api(`deliveries?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // Delete stock_reports
-    await api(`stock_reports?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // Delete the partner record
-    await api(`logistics_partners?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-    // Delete auth user if they have a portal account
-    if (userId) {
-      const delRes = await fetch(EDGE_FN, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-        body: JSON.stringify({ action: 'delete', user_id: userId })
-      });
-      const delData = await delRes.json();
-      if (delData.error) { showToast(delData.error, 'error'); return; }
+  showConfirmDelete(
+    `Delete ${name}`,
+    `This will remove their portal access and all associated stock records. This cannot be undone.`,
+    async () => {
+      try {
+        await api(`logistics_stock?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        await api(`deliveries?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        await api(`stock_reports?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        await api(`logistics_partners?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        if (userId) {
+          const delRes = await fetch(EDGE_FN, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+            body: JSON.stringify({ action: 'delete', user_id: userId })
+          });
+          const delData = await delRes.json();
+          if (delData.error) { showToast(delData.error, 'error'); return; }
+        }
+        showToast(`${name} has been permanently deleted`, 'success');
+        loadLogisticsPage();
+      } catch(e) { showToast('Failed to delete partner: ' + e.message, 'error'); }
     }
-    showToast(`${name} has been permanently deleted`, 'success');
-    loadLogisticsPage();
-  } catch(e) { showToast('Failed to delete partner: ' + e.message, 'error'); }
+  );
 }
 
 // ── PERFORMANCE ──
@@ -3316,17 +3390,55 @@ async function saveProduct() {
 }
 
 async function editProductPrice(id, name, price) {
-  const newPrice = prompt(`Update price for ${name}:`, price);
-  if (!newPrice || isNaN(parseFloat(newPrice))) return;
-  try {
-    await api(`products?id=eq.${id}`, 'PATCH', { price: parseFloat(newPrice) }, { Prefer: 'return=minimal' });
-    showToast('Price updated!', 'success');
-    loadProductsPage();
-  } catch(e) { showToast('Failed to update price', 'error'); }
+  showEditPrice(name, price, async (newPrice) => {
+    try {
+      await api(`products?id=eq.${id}`, 'PATCH', { price: parseFloat(newPrice) }, { Prefer: 'return=minimal' });
+      showToast('Price updated!', 'success');
+      loadProductsPage();
+    } catch(e) { showToast('Failed to update price', 'error'); }
+  });
 }
 
 // ── MODALS ──
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function showConfirmDelete(title, message, onConfirm, btnLabel = 'Delete Permanently') {
+  document.getElementById('confirm-delete-sub').textContent = title;
+  document.getElementById('confirm-delete-msg').textContent = message;
+  const btn = document.getElementById('confirm-delete-btn');
+  btn.textContent = btnLabel;
+  btn.onclick = async () => {
+    closeModal('modal-confirm-delete');
+    await onConfirm();
+  };
+  document.getElementById('modal-confirm-delete').classList.add('open');
+}
+
+function showResetPassword(name, onConfirm) {
+  document.getElementById('reset-pw-sub').textContent = `Reset password for ${name}`;
+  document.getElementById('reset-pw-input').value = 'LivingWell2026';
+  const btn = document.getElementById('reset-pw-btn');
+  btn.onclick = async () => {
+    const newPassword = document.getElementById('reset-pw-input').value.trim();
+    if (!newPassword || newPassword.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+    closeModal('modal-reset-password');
+    await onConfirm(newPassword);
+  };
+  document.getElementById('modal-reset-password').classList.add('open');
+}
+
+function showEditPrice(name, currentPrice, onConfirm) {
+  document.getElementById('edit-price-sub').textContent = `Update price for ${name}`;
+  document.getElementById('edit-price-input').value = currentPrice;
+  const btn = document.getElementById('edit-price-btn');
+  btn.onclick = async () => {
+    const newPrice = document.getElementById('edit-price-input').value.trim();
+    if (!newPrice || isNaN(parseFloat(newPrice))) { showToast('Enter a valid price', 'error'); return; }
+    closeModal('modal-edit-price');
+    await onConfirm(newPrice);
+  };
+  document.getElementById('modal-edit-price').classList.add('open');
+}
 
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
