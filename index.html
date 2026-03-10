@@ -2603,9 +2603,8 @@ function renderOrders(orders) {
           ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
           ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>` : ''}
           ${o.status === 'pending' ? `<button class="btn btn-red btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
-          ${o.status !== 'pending' && o.status !== 'cancelled' && o.deliveries?.[0]?.logistics_partners?.phone ? `<button class="btn btn-green btn-sm" onclick="openWhatsAppFromOrder('${o.id}')">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
-            WhatsApp
+          ${(o.status === 'assigned' || o.status === 'in_transit') ? `<button class="btn btn-green btn-sm" onclick="openWhatsAppFromOrder('${o.id}')">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
           </button>` : ''}
         </div>
       </td>
@@ -3793,52 +3792,36 @@ document.addEventListener('keydown', e => {
 function openWhatsAppFromOrder(orderId) {
   const o = allOrders.find(x => x.id === orderId);
   if (!o) { showToast('Order not found', 'error'); return; }
-  const delivery = o.deliveries?.[0];
-  const partner = delivery?.logistics_partners || {};
-  const phone = (partner.phone || '').replace(/[^0-9]/g, '').replace(/^0/, '234');
-  const partnerName = partner.name || '—';
+
+  // Try every possible path the phone could be nested under
+  const delivery = Array.isArray(o.deliveries) ? o.deliveries[0] : o.deliveries;
+  const lp = delivery?.logistics_partners || {};
+  const phone = (lp.phone || '').replace(/[^0-9]/g, '').replace(/^0/, '234');
+  const partnerName = lp.name || 'Logistics Partner';
   const product = o.products?.name || '—';
   const customer = o.customer_name || '—';
   const location = o.delivery_location || '—';
   const amount = parseFloat(o.total_price || 0).toLocaleString();
-  const date = new Date(o.created_at).toLocaleDateString('en-NG', { weekday:'long', day:'numeric', month:'long' });
 
-  if (!phone) { showToast('No phone number for this logistics partner', 'error'); return; }
-
-  document.getElementById('wa-modal-sub').textContent = `To: ${partnerName}`;
-  document.getElementById('wa-delivery-summary').innerHTML = [
-    ['Customer', customer],
-    ['Product', product],
-    ['Qty', o.quantity],
-    ['Location', location],
-    ['Amount', `₦${amount}`],
-    ['Date', date],
-  ].map(([k,v]) => `<div><div style="color:var(--text3);font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${k}</div><div style="font-weight:600;color:var(--text);">${v}</div></div>`).join('');
+  if (!phone) {
+    showToast('No phone number found for this logistics partner', 'error');
+    return;
+  }
 
   const msg = `Hello ${partnerName} 👋
 
-You have a new delivery assigned to you:
+Delivery reminder:
 
 👤 Customer: ${customer}
 📦 Product: ${product} × ${o.quantity}
 📍 Location: ${location}
 💰 Amount to collect: ₦${amount}
 
-Please confirm receipt of this message and update the delivery status on your portal once done.
+Please update the delivery status once done.
 
-Thank you!
 — Living Well Admin`;
 
-  document.getElementById('wa-message-body').value = msg;
-
-  const sendBtn = document.getElementById('wa-send-link');
-  sendBtn.onclick = function() {
-    const finalMsg = document.getElementById('wa-message-body').value;
-    sendBtn.href = `https://wa.me/${phone}?text=${encodeURIComponent(finalMsg)}`;
-    closeModal('modal-whatsapp');
-  };
-
-  document.getElementById('modal-whatsapp').classList.add('open');
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 function openWhatsAppModal(deliveryId) {
