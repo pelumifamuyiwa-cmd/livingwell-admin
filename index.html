@@ -1167,6 +1167,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </svg>
         Change Password
       </button>
+      <button class="logout-btn" onclick="openClearDataModal()" style="margin-bottom:6px;background:rgba(244,63,94,0.08);color:var(--red);border:1px solid rgba(244,63,94,0.18);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+        </svg>
+        Clear Admin Data
+      </button>
       <button class="logout-btn" onclick="handleLogout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
@@ -2704,19 +2710,30 @@ async function saveAssignment() {
   const logisticsId = document.getElementById('assign-logistics-select').value;
   const notes = document.getElementById('assign-notes').value;
   if (!logisticsId) { showToast('Please select a logistics partner', 'error'); return; }
+
+  // ── Open WhatsApp window IMMEDIATELY (before any await) to bypass popup blocker ──
+  // Browsers only allow window.open from a direct user gesture, not after async calls
+  let waWindow = null;
+  if (pendingWhatsAppUrl) {
+    waWindow = window.open('about:blank', '_blank');
+  }
+
   try {
     await api(`deliveries`, 'POST', { order_id: orderId, logistics_partner_id: logisticsId, notes, status: 'assigned' }, { Prefer: 'return=minimal' });
     await api(`orders?id=eq.${orderId}`, 'PATCH', { status: 'assigned' }, { Prefer: 'return=minimal' });
     closeModal('modal-assign');
     showToast('Order assigned! Opening WhatsApp...', 'success');
     loadOrders();
-    // Auto-open WhatsApp using stored URL (not button href which browser resolves)
-    if (pendingWhatsAppUrl) {
-      const waUrl = pendingWhatsAppUrl;
+    // Now navigate the already-opened window to the WhatsApp URL
+    if (waWindow && pendingWhatsAppUrl) {
+      waWindow.location.href = pendingWhatsAppUrl;
       pendingWhatsAppUrl = null;
-      setTimeout(() => { window.open(waUrl, '_blank'); }, 400);
     }
-  } catch(e) { showToast('Failed to assign: ' + e.message, 'error'); }
+  } catch(e) {
+    // Close the blank window if assignment failed
+    if (waWindow) waWindow.close();
+    showToast('Failed to assign: ' + e.message, 'error');
+  }
 }
 
 function confirmAssign() { saveAssignment(); }
@@ -3875,6 +3892,52 @@ Thank you!
 checkSession();
 document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
 
+// ── CLEAR ADMIN DATA ──
+function openClearDataModal() {
+  document.getElementById('clear-confirm-input').value = '';
+  document.getElementById('clear-confirm-btn').disabled = true;
+  document.getElementById('modal-clear-data').classList.add('open');
+}
+
+async function executeClearData() {
+  const btn = document.getElementById('clear-confirm-btn');
+  btn.textContent = 'Deleting...';
+  btn.disabled = true;
+
+  const errors = [];
+  try {
+    // Delete in order: payments first (FK to orders), then deliveries, then orders
+    try {
+      await api(`payments?id=neq.00000000-0000-0000-0000-000000000000`, 'DELETE', null, { Prefer: 'return=minimal' });
+    } catch(e) { errors.push('payments: ' + e.message); }
+
+    try {
+      await api(`deliveries?id=neq.00000000-0000-0000-0000-000000000000`, 'DELETE', null, { Prefer: 'return=minimal' });
+    } catch(e) { errors.push('deliveries: ' + e.message); }
+
+    try {
+      await api(`orders?id=neq.00000000-0000-0000-0000-000000000000`, 'DELETE', null, { Prefer: 'return=minimal' });
+    } catch(e) { errors.push('orders: ' + e.message); }
+
+    closeModal('modal-clear-data');
+
+    if (errors.length) {
+      showToast('Partially cleared. Some tables failed: ' + errors.join(', '), 'error');
+    } else {
+      showToast('✅ All orders and deliveries cleared successfully', 'success');
+    }
+
+    // Reload all affected sections
+    loadOrders();
+    loadDeliveries();
+
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+    btn.textContent = 'Delete Everything Permanently';
+    btn.disabled = false;
+  }
+}
+
 // ── WEEKLY PERFORMANCE LEADERBOARD ──
 function getWeekRange() {
   const now = new Date();
@@ -4011,6 +4074,39 @@ function closeWeeklyPerf() {
     </div>
     <div class="weekly-perf-footer">
       <button class="btn-close-perf" onclick="closeWeeklyPerf()">Got it, let's go! →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CLEAR ADMIN DATA MODAL ══ -->
+<div class="modal-overlay" id="modal-clear-data">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--red);">⚠️ Clear Admin Data</div>
+      <div class="modal-sub">This will permanently delete ALL orders and deliveries. This cannot be undone.</div>
+      <button class="modal-close" onclick="closeModal('modal-clear-data')">✕</button>
+    </div>
+    <div style="background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.2);border-radius:14px;padding:16px 18px;margin-bottom:20px;">
+      <div style="font-size:0.82rem;font-weight:700;color:var(--red);margin-bottom:8px;">The following will be permanently deleted:</div>
+      <div style="font-size:0.8rem;color:var(--text2);line-height:1.8;">
+        🗑️ All <strong style="color:var(--text);">Orders</strong><br>
+        🗑️ All <strong style="color:var(--text);">Deliveries</strong><br>
+        🗑️ All <strong style="color:var(--text);">Payments</strong>
+      </div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <label class="form-label">Type <strong style="color:var(--red);letter-spacing:1px;">DELETE</strong> to confirm</label>
+      <input type="text" class="form-input" id="clear-confirm-input" placeholder="Type DELETE here..." autocomplete="off"
+        oninput="document.getElementById('clear-confirm-btn').disabled = this.value !== 'DELETE';">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-clear-data')">Cancel</button>
+      <button class="btn btn-red" id="clear-confirm-btn" disabled onclick="executeClearData()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+        </svg>
+        Delete Everything Permanently
+      </button>
     </div>
   </div>
 </div>
