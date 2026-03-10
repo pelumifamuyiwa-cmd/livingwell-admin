@@ -2809,8 +2809,10 @@ async function saveRep() {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
-    const authData = await authRes.json();
+    let authData = {};
+    try { authData = await authRes.json(); } catch(e) {}
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create user', 'error'); return; }
+    if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
 
     await api(`profiles`, 'POST', { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true }, { Prefer: 'return=minimal' });
 
@@ -3054,8 +3056,10 @@ async function saveLogisticsAccount() {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
-    const authData = await authRes.json();
+    let authData = {};
+    try { authData = await authRes.json(); } catch(e) {}
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create account', 'error'); return; }
+    if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
     closeModal('modal-create-logistics-account');
     showToast(`Portal account created for ${name}!`, 'success');
