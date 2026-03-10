@@ -2127,6 +2127,39 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
+<!-- WHATSAPP MESSAGE MODAL -->
+<div class="modal-overlay" id="modal-whatsapp">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" style="display:flex;align-items:center;gap:8px;">
+          <svg viewBox="0 0 24 24" fill="#25D366" width="20" height="20"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
+          Message Logistics
+        </div>
+        <div class="modal-sub" id="wa-modal-sub">via WhatsApp</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-whatsapp')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Delivery summary -->
+      <div id="wa-delivery-summary" style="background:var(--card);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.8rem;">
+      </div>
+      <!-- Editable message -->
+      <div class="form-group">
+        <label class="form-label">Message — edit before sending</label>
+        <textarea id="wa-message-body" class="form-input" rows="7" style="resize:vertical;line-height:1.6;font-size:0.85rem;font-family:'Outfit',sans-serif;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-whatsapp')">Cancel</button>
+      <a id="wa-send-link" href="#" target="_blank" class="btn btn-green" style="text-decoration:none;" onclick="closeModal('modal-whatsapp')">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
+        Open WhatsApp
+      </a>
+    </div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://azjwjswjecnacddcozuu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTEyOTcsImV4cCI6MjA4ODYyNzI5N30.jojgbxPCkUC_czk19oeYF3b6FdbCQfpzzs9o8QdaXMs';
@@ -2681,11 +2714,11 @@ function renderDeliveries(deliveries) {
       <td><span class="badge badge-${d.status}">${d.status}</span></td>
       <td class="td-mono">${new Date(d.created_at).toLocaleDateString('en-GB')}</td>
       <td>
-        ${d.logistics_partners?.phone ? `
-        <a href="https://wa.me/${d.logistics_partners.phone.replace(/[^0-9]/g,'').replace(/^0/,'234')}?text=${encodeURIComponent(`Hi ${d.logistics_partners.name}, checking on delivery for ${d.orders?.customer_name} at ${d.orders?.delivery_location}`)}" target="_blank" class="btn btn-green btn-sm" style="text-decoration:none;">
+        <button onclick="openWhatsAppModal('${d.id}')"
+          class="btn btn-green btn-sm" ${!d.logistics_partners?.phone ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>
           <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
-          Follow up
-        </a>` : '—'}
+          Message
+        </button>
       </td>
     </tr>`).join('');
 }
@@ -3699,6 +3732,62 @@ function showToast(msg, type='') {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
 });
+
+// ── WHATSAPP MODAL ──
+function openWhatsAppModal(deliveryId) {
+  const d = allDeliveries.find(x => x.id === deliveryId);
+  if (!d) { showToast('Delivery not found', 'error'); return; }
+  const partner = d.logistics_partners || {};
+  const order = d.orders || {};
+  const product = order.products?.name || '—';
+  const customer = order.customer_name || '—';
+  const location = order.delivery_location || '—';
+  const amount = parseFloat(order.total_price || 0).toLocaleString();
+  const partnerName = partner.name || '—';
+  const phone = (partner.phone || '').replace(/[^0-9]/g, '').replace(/^0/, '234');
+  const date = new Date(d.assigned_at || d.created_at || Date.now()).toLocaleDateString('en-NG', { weekday:'long', day:'numeric', month:'long' });
+  const statusLabel = { assigned:'Pending pickup', delivered_payment_made:'Delivered & Paid', delivered_awaiting_payment:'Delivered – awaiting payment', cancelled:'Cancelled' };
+
+  if (!phone) { showToast('No phone number for this partner', 'error'); return; }
+
+  // Populate summary strip
+  document.getElementById('wa-modal-sub').textContent = `To: ${partnerName}`;
+  document.getElementById('wa-delivery-summary').innerHTML = [
+    ['Customer', customer],
+    ['Product', product],
+    ['Location', location],
+    ['Amount', `₦${amount}`],
+    ['Status', statusLabel[d.status] || d.status],
+    ['Date', date],
+  ].map(([k,v]) => `<div><div style="color:var(--text3);font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${k}</div><div style="font-weight:600;color:var(--text);">${v}</div></div>`).join('');
+
+  // Pre-fill message
+  const msg = `Hello ${partnerName} 👋
+
+You have a delivery assigned:
+
+👤 Customer: ${customer}
+📦 Product: ${product}
+📍 Location: ${location}
+💰 Amount to collect: ₦${amount}
+
+Please confirm receipt of this message and update the status on your portal once delivered.
+
+Thank you!
+— Living Well Admin`;
+
+  document.getElementById('wa-message-body').value = msg;
+
+  // Wire up send button — reads textarea at click time so edits are captured
+  const sendBtn = document.getElementById('wa-send-link');
+  sendBtn.onclick = function() {
+    const finalMsg = document.getElementById('wa-message-body').value;
+    sendBtn.href = `https://wa.me/${phone}?text=${encodeURIComponent(finalMsg)}`;
+    closeModal('modal-whatsapp');
+  };
+
+  document.getElementById('modal-whatsapp').classList.add('open');
+}
 
 // ── INIT ──
 checkSession();
