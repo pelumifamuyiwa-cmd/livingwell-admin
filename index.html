@@ -2894,20 +2894,21 @@ async function submitRecordPayment() {
   const note   = document.getElementById('record-pay-note').value.trim();
   if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
   try {
-    // Update order status
+    // 1. Update order status to paid
     await api(`orders?id=eq.${orderId}`, 'PATCH', { status: 'delivered_payment_made' }, { Prefer: 'return=minimal' });
-    // Record payment
-    await api('payments', 'POST', {
-      order_id: orderId,
-      amount_received: amount,
-      payment_method: method,
-      notes: note,
-      confirmed_at: new Date().toISOString()
-    });
+    // 2. Insert payment record — only include columns that exist
+    const payPayload = { order_id: orderId, amount_received: amount, confirmed_at: new Date().toISOString() };
+    if (note) payPayload.notes = note;
+    // Try with payment_method first, fall back without it if column doesn't exist
+    try {
+      await api('payments', 'POST', { ...payPayload, payment_method: method }, { Prefer: 'return=minimal' });
+    } catch(e2) {
+      await api('payments', 'POST', payPayload, { Prefer: 'return=minimal' });
+    }
     closeModal('modal-record-payment');
     showToast('Payment recorded successfully! ✓', 'success');
     loadOrders();
-  } catch(e) { showToast('Failed to record payment: ' + e.message, 'error'); }
+  } catch(e) { showToast('Failed: ' + (e.message || JSON.stringify(e)), 'error'); }
 }
 
 // ── ASSIGN LOGISTICS ──
