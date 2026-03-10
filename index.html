@@ -2685,11 +2685,11 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
   select.innerHTML = '<option value="">Select partner...</option>' +
     logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone||''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
 
-  select.onchange = () => {
+  function updateWAPreview() {
     const opt = select.options[select.selectedIndex];
-    const phone = opt.getAttribute('data-phone');
-    const lname = opt.getAttribute('data-name');
-    if (!phone || !opt.value) {
+    const phone = opt ? opt.getAttribute('data-phone') : '';
+    const lname = opt ? opt.getAttribute('data-name') : '';
+    if (!phone || !opt || !opt.value) {
       document.getElementById('whatsapp-preview').style.display = 'none';
       document.getElementById('whatsapp-send-btn').style.display = 'none';
       pendingWhatsAppUrl = null;
@@ -2702,7 +2702,15 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
     pendingWhatsAppUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     document.getElementById('whatsapp-send-btn').href = pendingWhatsAppUrl;
     document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
-  };
+  }
+
+  select.onchange = updateWAPreview;
+
+  // Auto-select first partner if only one exists, and trigger preview immediately
+  if (logisticsPartners.length === 1) {
+    select.selectedIndex = 1;
+    updateWAPreview();
+  }
 }
 
 async function saveAssignment() {
