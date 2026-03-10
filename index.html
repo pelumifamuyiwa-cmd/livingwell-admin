@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Living Well — Admin Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --purple: #7C3AED;
@@ -19,8 +19,8 @@
   --card-hover: rgba(255,255,255,0.07);
   --white: #FFFFFF;
   --text: #F0EEF8;
-  --text2: #9490A8;
-  --text3: #5A5570;
+  --text2: #B8B4CC;
+  --text3: #7A7590;
   --green: #10B981;
   --green-dim: rgba(16,185,129,0.15);
   --red: #F43F5E;
@@ -37,11 +37,13 @@
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
 body {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
 
@@ -125,7 +127,7 @@ body {
   border-radius: 12px;
   padding: 13px 16px;
   font-size: 0.95rem;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   color: var(--text);
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -157,7 +159,7 @@ select.form-input option {
   padding: 14px;
   font-size: 0.95rem;
   font-weight: 600;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   cursor: pointer;
   transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   box-shadow: 0 4px 20px var(--purple-glow);
@@ -341,7 +343,7 @@ select.form-input option {
   transition: all 0.15s;
   width: 100%;
   background: none; border: none;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 .logout-btn:hover { background: var(--red-dim); color: var(--red); }
@@ -371,7 +373,7 @@ select.form-input option {
   color: var(--white); margin-bottom: 4px;
 }
 
-.page-sub { font-size: 0.85rem; color: var(--text2); }
+.page-sub { font-size: 0.85rem; font-weight: 500; color: var(--text2); }
 
 /* ── STAT CARDS ── */
 .stats-grid {
@@ -455,7 +457,7 @@ select.form-input option {
 .stat-card.red .stat-value { color: var(--red); }
 .stat-card.blue .stat-value { color: var(--blue); }
 
-.stat-sub { font-size: 0.67rem; color: var(--text3); }
+.stat-sub { font-size: 0.68rem; font-weight: 600; color: var(--text2); }
 
 .perf-tab {
   padding: 8px 18px;
@@ -463,7 +465,7 @@ select.form-input option {
   border: none;
   background: none;
   color: var(--text3);
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.83rem;
   font-weight: 600;
   cursor: pointer;
@@ -494,7 +496,7 @@ select.form-input option {
 }
 
 .card-title { font-size: 0.95rem; font-weight: 600; color: var(--white); }
-.card-sub { font-size: 0.75rem; color: var(--text3); margin-top: 2px; }
+.card-sub { font-size: 0.76rem; font-weight: 500; color: var(--text2); margin-top: 2px; }
 
 .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
@@ -507,7 +509,7 @@ select.form-input option {
   cursor: pointer;
   border: none;
   transition: all 0.15s;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   display: inline-flex; align-items: center; gap: 7px;
 }
 
@@ -560,7 +562,7 @@ select.form-input option {
   border-radius: 10px;
   padding: 9px 14px 9px 36px;
   font-size: 0.85rem;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   color: var(--text);
   outline: none;
   width: 220px;
@@ -576,7 +578,7 @@ select.form-input option {
   border-radius: 10px;
   padding: 9px 12px;
   font-size: 0.85rem;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   color: var(--text2);
   outline: none;
   cursor: pointer;
@@ -590,7 +592,7 @@ table { width: 100%; border-collapse: collapse; }
 th {
   text-align: left;
   font-size: 0.68rem; font-weight: 700;
-  color: var(--text3);
+  color: var(--text2); letter-spacing: 0.4px;
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 12px 20px;
@@ -601,17 +603,19 @@ th {
 
 td {
   padding: 15px 20px;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   color: var(--text);
   vertical-align: middle;
+  letter-spacing: -0.1px;
 }
 
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: rgba(255,255,255,0.02); }
 
 .td-name { font-weight: 600; color: var(--white); }
-.td-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text2); }
+.td-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 500; color: var(--text); }
 .td-amount { font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 
 /* ── BADGES ── */
@@ -636,12 +640,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge-delivered { background: var(--green-dim); color: var(--green); }
 .badge-delivered_payment_made { background: var(--green-dim); color: var(--green); }
 .badge-delivered_awaiting_payment { background: var(--amber-dim); color: var(--amber); }
-.badge-cancelled { background: rgba(255,255,255,0.05); color: var(--text3); }
+.badge-cancelled { background: rgba(255,255,255,0.06); color: #9A96B0; }
 .badge-received { background: var(--green-dim); color: var(--green); }
 .badge-owner { background: var(--purple-dim); color: var(--purple-light); }
 .badge-manager { background: var(--blue-dim); color: var(--blue); }
 .badge-active { background: var(--green-dim); color: var(--green); }
-.badge-inactive { background: rgba(255,255,255,0.05); color: var(--text3); }
+.badge-inactive { background: rgba(255,255,255,0.06); color: #9A96B0; }
 
 /* ── ROW ACTIONS ── */
 .row-actions { display: flex; gap: 6px; align-items: center; }
@@ -976,7 +980,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   border-radius: 12px;
   padding: 13px 40px;
   font-size: 0.9rem; font-weight: 600;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
   cursor: pointer;
   box-shadow: 0 4px 20px var(--purple-glow);
   transition: all 0.2s;
@@ -2157,7 +2161,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <!-- Editable message -->
       <div class="form-group">
         <label class="form-label">Message — edit before sending</label>
-        <textarea id="wa-message-body" class="form-input" rows="7" style="resize:vertical;line-height:1.6;font-size:0.85rem;font-family:'Outfit',sans-serif;"></textarea>
+        <textarea id="wa-message-body" class="form-input" rows="7" style="resize:vertical;line-height:1.6;font-size:0.85rem;font-family:'Inter',sans-serif;"></textarea>
       </div>
     </div>
     <div class="modal-footer">
@@ -2663,8 +2667,11 @@ async function cancelOrder(id) {
 }
 
 // ── ASSIGN LOGISTICS ──
+let pendingWhatsAppUrl = null; // stores WA url set during modal interaction
+
 function openAssignModal(orderId, customerName, productName, location, amount) {
   currentAssignOrderId = orderId;
+  pendingWhatsAppUrl = null;
   document.getElementById('assign-order-id').value = orderId;
   document.getElementById('modal-assign').classList.add('open');
 
@@ -2676,12 +2683,18 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
     const opt = select.options[select.selectedIndex];
     const phone = opt.getAttribute('data-phone');
     const lname = opt.getAttribute('data-name');
-    if (!phone || !opt.value) { document.getElementById('whatsapp-preview').style.display = 'none'; document.getElementById('whatsapp-send-btn').style.display = 'none'; return; }
+    if (!phone || !opt.value) {
+      document.getElementById('whatsapp-preview').style.display = 'none';
+      document.getElementById('whatsapp-send-btn').style.display = 'none';
+      pendingWhatsAppUrl = null;
+      return;
+    }
     const msg = `Hello ${lname},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
     document.getElementById('whatsapp-msg-preview').textContent = msg;
     document.getElementById('whatsapp-preview').style.display = 'block';
     const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
-    document.getElementById('whatsapp-send-btn').href = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    pendingWhatsAppUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    document.getElementById('whatsapp-send-btn').href = pendingWhatsAppUrl;
     document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
   };
 }
@@ -2697,10 +2710,11 @@ async function saveAssignment() {
     closeModal('modal-assign');
     showToast('Order assigned! Opening WhatsApp...', 'success');
     loadOrders();
-    // Auto-open WhatsApp immediately after assignment
-    const waBtn = document.getElementById('whatsapp-send-btn');
-    if (waBtn && waBtn.href && waBtn.href !== '#' && !waBtn.href.endsWith('#')) {
-      setTimeout(() => { window.open(waBtn.href, '_blank'); }, 400);
+    // Auto-open WhatsApp using stored URL (not button href which browser resolves)
+    if (pendingWhatsAppUrl) {
+      const waUrl = pendingWhatsAppUrl;
+      pendingWhatsAppUrl = null;
+      setTimeout(() => { window.open(waUrl, '_blank'); }, 400);
     }
   } catch(e) { showToast('Failed to assign: ' + e.message, 'error'); }
 }
