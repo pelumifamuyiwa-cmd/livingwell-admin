@@ -2659,7 +2659,7 @@ function confirmAssign() { saveAssignment(); }
 async function loadDeliveries() {
   document.getElementById('deliveries-body').innerHTML = '<tr><td colspan="8" class="loading">Loading...</td></tr>';
   try {
-    const data = await api(`deliveries?select=*,orders(customer_name,total_price,delivery_location,products(name)),logistics_partners(name,phone)&order=assigned_at.desc`);
+    const data = await api(`deliveries?select=*,orders(customer_name,total_price,delivery_location,products(name)),logistics_partners(name,phone)&order=created_at.desc`);
     allDeliveries = data || [];
     renderDeliveries(allDeliveries);
   } catch(e) { showToast('Failed to load deliveries', 'error'); }
@@ -2679,7 +2679,7 @@ function renderDeliveries(deliveries) {
       <td style="font-size:0.8rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
       <td class="td-amount" style="color:var(--green);">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
       <td><span class="badge badge-${d.status}">${d.status}</span></td>
-      <td class="td-mono">${new Date(d.assigned_at).toLocaleDateString('en-GB')}</td>
+      <td class="td-mono">${new Date(d.created_at).toLocaleDateString('en-GB')}</td>
       <td>
         ${d.logistics_partners?.phone ? `
         <a href="https://wa.me/${d.logistics_partners.phone.replace(/[^0-9]/g,'').replace(/^0/,'234')}?text=${encodeURIComponent(`Hi ${d.logistics_partners.name}, checking on delivery for ${d.orders?.customer_name} at ${d.orders?.delivery_location}`)}" target="_blank" class="btn btn-green btn-sm" style="text-decoration:none;">
@@ -2852,7 +2852,7 @@ async function loadReconciliation() {
   try {
     // Load deliveries for that date (linked to orders and logistics partners)
     const deliveries = await api(
-      `deliveries?assigned_at=gte.${date}T00:00:00&assigned_at=lte.${date}T23:59:59&select=*,logistics_partners(id,name),orders(customer_name,total_price,status,quantity,products(name),profiles(full_name,ref_code))&order=assigned_at.desc`
+      `deliveries?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,logistics_partners(id,name),orders(customer_name,total_price,status,quantity,products(name),profiles(full_name,ref_code))&order=created_at.desc`
     );
 
     let data = deliveries || [];
@@ -3065,16 +3065,19 @@ async function loadLogisticsPage() {
     const tbody = document.getElementById('logistics-body');
     if (!data?.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);">No logistics partners found</td></tr>'; return; }
     // Load stock totals per partner
-    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,quantity_confirmed,confirmed`);
+    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,quantity_confirmed,quantity_remaining,confirmed`);
     const stockMap = {};
     (allStock||[]).forEach(s => {
-      if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0 };
+      if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0, remaining:0 };
       stockMap[s.logistics_partner_id].sent += s.quantity_sent||0;
-      if (s.confirmed) stockMap[s.logistics_partner_id].confirmed += s.quantity_confirmed||0;
+      if (s.confirmed) {
+        stockMap[s.logistics_partner_id].confirmed += s.quantity_confirmed||0;
+        stockMap[s.logistics_partner_id].remaining += s.quantity_remaining||0;
+      }
     });
 
     tbody.innerHTML = data.map(l => {
-      const st = stockMap[l.id] || { sent:0, confirmed:0 };
+      const st = stockMap[l.id] || { sent:0, confirmed:0, remaining:0 };
       const pendingConfirm = st.sent - st.confirmed;
       return `
       <tr>
@@ -3082,7 +3085,7 @@ async function loadLogisticsPage() {
         <td class="td-mono">${l.phone||'—'}</td>
         <td style="color:var(--text2);font-size:0.82rem;">${l.coverage_area||'—'}</td>
         <td class="td-mono">${st.sent > 0 ? st.sent : '—'}</td>
-        <td class="td-mono">${st.confirmed > 0 ? `<span style="color:var(--green)">${st.confirmed}</span>${pendingConfirm>0?` <span style="color:var(--amber);font-size:0.7rem;">(${pendingConfirm} pending)</span>`:''}` : '—'}</td>
+        <td class="td-mono">${st.confirmed > 0 ? `<span style="color:var(--green)">${st.remaining} remaining</span>${pendingConfirm>0?` <span style="color:var(--amber);font-size:0.7rem;">(${pendingConfirm} unconfirmed)</span>`:''}` : '—'}</td>
         <td><span class="badge ${l.is_active?'badge-active':'badge-inactive'}">${l.is_active?'Active':'Inactive'}</span></td>
         <td>
           <div class="row-actions">
@@ -3432,9 +3435,8 @@ async function loadPerformance() {
       if (!repStats[o.rep_id]) return;
       const s = repStats[o.rep_id];
       s.total++;
-      s.value += parseFloat(o.total_price||0);
-      if (o.status === 'delivered_payment_made') s.delivered_paid++;
-      else if (o.status === 'delivered_awaiting_payment') s.delivered_awaiting++;
+      if (o.status === 'delivered_payment_made') { s.delivered_paid++; s.value += parseFloat(o.total_price||0); }
+      else if (o.status === 'delivered_awaiting_payment') { s.delivered_awaiting++; s.value += parseFloat(o.total_price||0); }
       else if (o.status === 'cancelled') s.cancelled++;
       else if (o.status === 'assigned') s.assigned++;
       else s.pending++;
