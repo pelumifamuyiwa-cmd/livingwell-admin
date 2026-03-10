@@ -2659,7 +2659,7 @@ function confirmAssign() { saveAssignment(); }
 async function loadDeliveries() {
   document.getElementById('deliveries-body').innerHTML = '<tr><td colspan="8" class="loading">Loading...</td></tr>';
   try {
-    const data = await api(`deliveries?select=*,orders(customer_name,total_price,delivery_location,products(name)),logistics_partners(name,phone)&order=created_at.desc`);
+    const data = await api(`deliveries?select=*,orders(customer_name,total_price,delivery_location,products(name)),logistics_partners(name,phone)&order=assigned_at.desc`);
     allDeliveries = data || [];
     renderDeliveries(allDeliveries);
   } catch(e) { showToast('Failed to load deliveries', 'error'); }
@@ -2852,7 +2852,7 @@ async function loadReconciliation() {
   try {
     // Load deliveries for that date (linked to orders and logistics partners)
     const deliveries = await api(
-      `deliveries?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,logistics_partners(id,name),orders(customer_name,total_price,status,quantity,products(name),profiles(full_name,ref_code))&order=created_at.desc`
+      `deliveries?assigned_at=gte.${date}T00:00:00&assigned_at=lte.${date}T23:59:59&select=*,logistics_partners(id,name),orders(customer_name,total_price,status,quantity,products(name),profiles(full_name,ref_code))&order=assigned_at.desc`
     );
 
     let data = deliveries || [];
@@ -2987,7 +2987,7 @@ async function saveRep() {
   try {
     const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
     let authData = {};
@@ -3030,7 +3030,7 @@ async function deleteRep(id, name) {
         await api(`profiles?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         const delRes = await fetch(EDGE_FN, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
           body: JSON.stringify({ action: 'delete', user_id: id })
         });
         const delData = await delRes.json();
@@ -3047,7 +3047,7 @@ async function resetRepPassword(id, name) {
     try {
       const res = await fetch(EDGE_FN, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
         body: JSON.stringify({ action: 'reset_password', user_id: id, password: newPassword })
       });
       const data = await res.json();
@@ -3065,7 +3065,7 @@ async function loadLogisticsPage() {
     const tbody = document.getElementById('logistics-body');
     if (!data?.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);">No logistics partners found</td></tr>'; return; }
     // Load stock totals per partner
-    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,quantity_confirmed,quantity_remaining,confirmed`);
+    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,confirmed`);
     const stockMap = {};
     (allStock||[]).forEach(s => {
       if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0, remaining:0 };
@@ -3142,9 +3142,9 @@ function renderPartnerStockView() {
 
   // Summary stats
   const totalSent = data.reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_confirmed||0), 0);
+  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
   const awaitingConfirm = data.filter(a=>!a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalRemaining = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_remaining||0), 0);
+  const totalRemaining = 0;
 
   document.getElementById('ps-total-sent').textContent = totalSent;
   document.getElementById('ps-confirmed').textContent = totalConfirmed;
@@ -3153,13 +3153,15 @@ function renderPartnerStockView() {
   document.getElementById('ps-remaining').style.color = totalRemaining <= 20 ? 'var(--red)' : 'var(--green)';
 
   // Current balance per product (all time, confirmed only)
-  const allConfirmed = currentPartnerStockData.filter(a => a.confirmed);
   const balanceMap = {};
-  allConfirmed.forEach(a => {
+  currentPartnerStockData.forEach(a => {
     const pid = a.product_id;
-    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', remaining: 0, sent: 0 };
-    balanceMap[pid].remaining += a.quantity_remaining||0;
-    balanceMap[pid].sent += a.quantity_confirmed||0;
+    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', sent: 0, confirmed: 0, remaining: 0 };
+    balanceMap[pid].sent += a.quantity_sent||0;
+    if (a.confirmed) {
+      balanceMap[pid].confirmed += a.quantity_confirmed||0;
+      balanceMap[pid].remaining += a.quantity_remaining||0;
+    }
   });
 
   const balanceEl = document.getElementById('ps-balance-list');
@@ -3171,13 +3173,12 @@ function renderPartnerStockView() {
       <thead><tr><th>Product</th><th>Total Received</th><th>Remaining</th><th>Used</th></tr></thead>
       <tbody>` +
       balanceEntries.map(b => {
-        const used = b.sent - b.remaining;
-        const pct = b.sent > 0 ? Math.round((b.remaining/b.sent)*100) : 0;
+        const pct = b.confirmed > 0 ? Math.round((b.remaining/b.confirmed)*100) : 0;
         return `<tr>
           <td style="font-weight:600;font-size:0.82rem;">${b.name}</td>
           <td class="td-mono">${b.sent}</td>
+          <td class="td-mono" style="color:var(--green);">${b.confirmed}</td>
           <td class="td-mono" style="color:${b.remaining<=10?'var(--red)':'var(--green)'};font-weight:700;">${b.remaining} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
-          <td class="td-mono" style="color:var(--text3);">${used}</td>
         </tr>`;
       }).join('') +
       `</tbody></table></div>`;
@@ -3189,7 +3190,7 @@ function renderPartnerStockView() {
     logEl.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:8px 0;">No stock movements in this period</div>';
   } else {
     logEl.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Product</th><th>Sent</th><th>Confirmed</th><th>Remaining</th><th>Status</th></tr></thead>
+      <thead><tr><th>Date</th><th>Product</th><th>Qty Sent</th><th>Status</th></tr></thead>
       <tbody>` +
       data.map(a => `<tr>
         <td style="font-size:0.75rem;color:var(--text3);">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
@@ -3197,7 +3198,7 @@ function renderPartnerStockView() {
         <td class="td-mono">${a.quantity_sent}</td>
         <td class="td-mono" style="color:${a.confirmed?'var(--green)':'var(--amber)'};">${a.confirmed ? a.quantity_confirmed : '—'}</td>
         <td class="td-mono" style="color:${(a.quantity_remaining||0)<=10?'var(--red)':'var(--text2)'};">${a.confirmed ? a.quantity_remaining : '—'}</td>
-        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'Confirmed':'Pending'}</span></td>
+        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'✓ Confirmed':'Awaiting'}</span></td>
       </tr>`).join('') +
       `</tbody></table></div>`;
   }
@@ -3242,7 +3243,7 @@ async function saveLogisticsAccount() {
   try {
     const authRes = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
       body: JSON.stringify({ action: 'create', email, password })
     });
     let authData = {};
@@ -3250,6 +3251,10 @@ async function saveLogisticsAccount() {
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create account', 'error'); return; }
     if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
     await api(`logistics_partners?id=eq.${id}`, 'PATCH', { user_id: authData.id, email }, { Prefer: 'return=minimal' });
+    // Insert profiles row so logistics portal login works
+    try {
+      await api(`profiles`, 'POST', { id: authData.id, full_name: name, role: 'logistics', is_active: true }, { Prefer: 'return=minimal' });
+    } catch(e) { console.warn('Profile row may already exist:', e.message); }
     closeModal('modal-create-logistics-account');
     showToast(`Portal account created for ${name}!`, 'success');
     loadLogisticsPage();
@@ -3282,7 +3287,7 @@ async function saveLogisticsLogin() {
 
     const res = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
       body: JSON.stringify({ action: 'reset_password', user_id: userId, ...updates })
     });
     const data = await res.json();
@@ -3334,7 +3339,7 @@ async function confirmSendStock() {
       product_id: productId,
       quantity_sent: qty,
       quantity_confirmed: 0,
-      quantity_remaining: 0,
+      quantity_remaining: qty,
       confirmed: false,
       sent_at: new Date().toISOString()
     }, { Prefer: 'return=minimal' });
@@ -3347,7 +3352,7 @@ async function confirmSendStock() {
     closeModal('modal-send-stock');
     showToast(`${qty} units of ${productName} sent to ${partnerName}!`, 'success');
     loadLogisticsPage();
-    loadStockPage();
+    loadStock();
   } catch(e) { showToast('Failed to send stock: ' + e.message, 'error'); }
 }
 
@@ -3381,14 +3386,20 @@ async function deleteLogisticsPartner(id, name, userId) {
     `This will remove their portal access and all associated stock records. This cannot be undone.`,
     async () => {
       try {
+        // Reset any assigned orders back to pending before deleting deliveries
+        const partnerDeliveries = await api(`deliveries?logistics_partner_id=eq.${id}&select=order_id`) || [];
+        for (const d of partnerDeliveries) {
+          if (d.order_id) {
+            try { await api(`orders?id=eq.${d.order_id}`, 'PATCH', { status: 'pending' }, { Prefer: 'return=minimal' }); } catch(e) {}
+          }
+        }
         await api(`logistics_stock?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         await api(`deliveries?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
-        await api(`stock_reports?logistics_partner_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         await api(`logistics_partners?id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         if (userId) {
           const delRes = await fetch(EDGE_FN, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
             body: JSON.stringify({ action: 'delete', user_id: userId })
           });
           const delData = await delRes.json();
@@ -3622,7 +3633,7 @@ async function saveNewPassword() {
     // Update password via Edge Function
     const res = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
       body: JSON.stringify({ action: 'reset_password', user_id: currentUser.id, password: newPw })
     });
     const data = await res.json();
