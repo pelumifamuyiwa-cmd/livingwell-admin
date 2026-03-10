@@ -3232,7 +3232,7 @@ function renderPartnerStockView() {
   const totalSent = data.reduce((s,a) => s + (a.quantity_sent||0), 0);
   const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
   const awaitingConfirm = data.filter(a=>!a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalRemaining = 0;
+  const totalRemaining = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_remaining||0), 0);
 
   document.getElementById('ps-total-sent').textContent = totalSent;
   document.getElementById('ps-confirmed').textContent = totalConfirmed;
@@ -3262,11 +3262,12 @@ function renderPartnerStockView() {
       <tbody>` +
       balanceEntries.map(b => {
         const pct = b.confirmed > 0 ? Math.round((b.remaining/b.confirmed)*100) : 0;
+        const used = b.confirmed - b.remaining;
         return `<tr>
           <td style="font-weight:600;font-size:0.82rem;">${b.name}</td>
-          <td class="td-mono">${b.sent}</td>
-          <td class="td-mono" style="color:var(--green);">${b.confirmed}</td>
+          <td class="td-mono">${b.confirmed}</td>
           <td class="td-mono" style="color:${b.remaining<=10?'var(--red)':'var(--green)'};font-weight:700;">${b.remaining} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
+          <td class="td-mono" style="color:var(--amber);">${used < 0 ? 0 : used}</td>
         </tr>`;
       }).join('') +
       `</tbody></table></div>`;
