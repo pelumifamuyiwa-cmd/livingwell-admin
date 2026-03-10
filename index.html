@@ -447,6 +447,26 @@ body {
 
 .stat-sub { font-size: 0.67rem; color: var(--text3); }
 
+.perf-tab {
+  padding: 8px 18px;
+  border-radius: 10px 10px 0 0;
+  border: none;
+  background: none;
+  color: var(--text3);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.perf-tab.active {
+  color: var(--purple-light);
+  border-bottom: 2px solid var(--purple);
+  background: var(--purple-dim);
+}
+.perf-tab:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.03); }
+
 /* ── CARDS ── */
 .card {
   background: var(--bg3);
@@ -1651,16 +1671,66 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="page-header">
         <div>
           <div class="page-title">Performance</div>
-          <div class="page-sub">Sales rep leaderboard and rankings</div>
+          <div class="page-sub">Sales rep activity, completion rates and rankings</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="perf-period" class="form-input" style="width:auto;padding:8px 12px;font-size:0.82rem;" onchange="loadPerformance()">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="week" selected>This Week</option>
+            <option value="month">This Month</option>
+          </select>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Rep Leaderboard</div>
-          <div class="card-sub">Ranked by total orders</div>
+
+      <!-- Tab buttons -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--card-border);padding-bottom:0;">
+        <button class="perf-tab active" id="ptab-overview" onclick="switchPerfView('overview')">Overview</button>
+        <button class="perf-tab" id="ptab-detail" onclick="switchPerfView('detail')">Detailed Breakdown</button>
+      </div>
+
+      <!-- Overview Tab -->
+      <div id="perfview-overview">
+        <!-- Summary strip -->
+        <div id="perf-summary-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;"></div>
+        <!-- Leaderboard -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🏆 Leaderboard</div>
+            <div class="card-sub">Ranked by completion rate</div>
+          </div>
+          <div id="full-leaderboard">
+            <div class="loading">Loading performance data...</div>
+          </div>
         </div>
-        <div id="full-leaderboard">
-          <div class="loading">Loading performance data...</div>
+      </div>
+
+      <!-- Detail Tab -->
+      <div id="perfview-detail" style="display:none;">
+        <div class="card" style="overflow-x:auto;">
+          <div class="card-header">
+            <div class="card-title">📋 Full Rep Activity Table</div>
+            <div class="card-sub">Order intake, delivery completion and revenue per rep</div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--card-border);">
+                <th style="padding:10px 16px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">#</th>
+                <th style="padding:10px 16px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Rep</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Orders</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Delivered</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Awaiting Pay</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Pending</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Cancelled</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Completion %</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Revenue</th>
+                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="perf-detail-body">
+              <tr><td colspan="10" class="loading">Loading...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -3329,52 +3399,131 @@ async function deleteLogisticsPartner(id, name, userId) {
 }
 
 // ── PERFORMANCE ──
+function switchPerfView(view) {
+  document.getElementById('perfview-overview').style.display = view === 'overview' ? '' : 'none';
+  document.getElementById('perfview-detail').style.display = view === 'detail' ? '' : 'none';
+  document.querySelectorAll('.perf-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`ptab-${view}`).classList.add('active');
+}
+
 async function loadPerformance() {
   try {
+    const period = document.getElementById('perf-period')?.value || 'all';
+    const now = new Date();
+    let fromDate = null;
+    if (period === 'today') { fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(); }
+    else if (period === 'week') { const d = new Date(now); d.setDate(now.getDate() - now.getDay()); d.setHours(0,0,0,0); fromDate = d.toISOString(); }
+    else if (period === 'month') { fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString(); }
+
+    let ordersUrl = `orders?select=rep_id,total_price,status`;
+    if (fromDate) ordersUrl += `&created_at=gte.${fromDate}`;
+
     const [reps, orders] = await Promise.all([
       api(`profiles?role=eq.rep&select=*&order=full_name`),
-      api(`orders?select=rep_id,total_price,status`)
+      api(ordersUrl)
     ]);
 
     const repStats = {};
-    (reps||[]).forEach(r => { repStats[r.id] = { ...r, orders: 0, value: 0, delivered: 0 }; });
-    (orders||[]).forEach(o => {
-      if (repStats[o.rep_id]) {
-        repStats[o.rep_id].orders++;
-        repStats[o.rep_id].value += parseFloat(o.total_price||0);
-        if (['delivered_payment_made','delivered_awaiting_payment'].includes(o.status)) repStats[o.rep_id].delivered++;
-      }
+    (reps||[]).forEach(r => {
+      repStats[r.id] = { ...r, total: 0, delivered_paid: 0, delivered_awaiting: 0, pending: 0, cancelled: 0, assigned: 0, value: 0 };
     });
 
-    const sorted = Object.values(repStats).filter(r => r.full_name && r.full_name !== 'Unknown').sort((a,b) => b.orders - a.orders);
-    const el = document.getElementById('full-leaderboard');
+    (orders||[]).forEach(o => {
+      if (!repStats[o.rep_id]) return;
+      const s = repStats[o.rep_id];
+      s.total++;
+      s.value += parseFloat(o.total_price||0);
+      if (o.status === 'delivered_payment_made') s.delivered_paid++;
+      else if (o.status === 'delivered_awaiting_payment') s.delivered_awaiting++;
+      else if (o.status === 'cancelled') s.cancelled++;
+      else if (o.status === 'assigned') s.assigned++;
+      else s.pending++;
+    });
 
-    if (!sorted.length) { el.innerHTML = '<div class="empty-state"><p>No reps found</p></div>'; return; }
+    const sorted = Object.values(repStats)
+      .filter(r => r.full_name)
+      .map(r => {
+        const completed = r.delivered_paid + r.delivered_awaiting;
+        const completionRate = r.total > 0 ? Math.round((completed / r.total) * 100) : 0;
+        return { ...r, completed, completionRate };
+      })
+      .sort((a, b) => b.completionRate - a.completionRate || b.total - a.total);
 
-    el.innerHTML = sorted.map((r, i) => `
+    // Summary strip
+    const totalOrders = sorted.reduce((s,r) => s + r.total, 0);
+    const totalDelivered = sorted.reduce((s,r) => s + r.completed, 0);
+    const totalRevenue = sorted.reduce((s,r) => s + r.value, 0);
+    const avgCompletion = sorted.length ? Math.round(sorted.reduce((s,r) => s + r.completionRate, 0) / sorted.length) : 0;
+    const topRep = sorted[0];
+
+    const strip = document.getElementById('perf-summary-strip');
+    if (strip) strip.innerHTML = `
+      <div class="stat-card purple"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg></div><div class="stat-label">Total Orders</div><div class="stat-value">${totalOrders}</div><div class="stat-sub">All reps combined</div></div>
+      <div class="stat-card green"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div class="stat-label">Delivered</div><div class="stat-value">${totalDelivered}</div><div class="stat-sub">${totalOrders > 0 ? Math.round((totalDelivered/totalOrders)*100) : 0}% of all orders</div></div>
+      <div class="stat-card amber"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="stat-label">Avg Completion</div><div class="stat-value">${avgCompletion}%</div><div class="stat-sub">Across all reps</div></div>
+      <div class="stat-card blue"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><div class="stat-label">Top Rep</div><div class="stat-value" style="font-size:0.9rem;">${topRep ? topRep.full_name.split(' ')[0] : '—'}</div><div class="stat-sub">${topRep ? topRep.completionRate + '% completion' : ''}</div></div>
+      <div class="stat-card green"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:1rem;">₦${totalRevenue.toLocaleString()}</div><div class="stat-sub">Delivered orders</div></div>
+    `;
+
+    // Leaderboard
+    const lb = document.getElementById('full-leaderboard');
+    if (!sorted.length) { lb.innerHTML = '<div class="empty-state"><p>No reps found</p></div>'; return; }
+
+    lb.innerHTML = sorted.map((r, i) => {
+      const rateColor = r.completionRate >= 75 ? 'var(--green)' : r.completionRate >= 50 ? 'var(--amber)' : 'var(--red)';
+      const barColor = r.completionRate >= 75 ? '#22c55e' : r.completionRate >= 50 ? '#f59e0b' : '#ef4444';
+      return `
       <div class="leader-item">
         <div class="leader-rank ${i<3?'top':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
         <div class="leader-avatar">${r.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}</div>
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <div class="leader-name">${r.full_name}</div>
           <div class="leader-ref">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
-        </div>
-        <div style="display:flex;gap:20px;text-align:center;">
-          <div>
-            <div class="leader-count">${r.orders}</div>
-            <div class="leader-sub">orders</div>
-          </div>
-          <div>
-            <div class="leader-count" style="color:var(--green);">${r.delivered}</div>
-            <div class="leader-sub">delivered</div>
-          </div>
-          <div>
-            <div class="leader-count" style="color:var(--amber);font-size:0.8rem;">₦${r.value.toLocaleString()}</div>
-            <div class="leader-sub">value</div>
+          <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;height:5px;background:var(--card-border);border-radius:99px;max-width:160px;">
+              <div style="width:${r.completionRate}%;height:100%;background:${barColor};border-radius:99px;"></div>
+            </div>
+            <span style="font-size:0.7rem;font-weight:700;color:${rateColor};">${r.completionRate}%</span>
           </div>
         </div>
-        <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="margin-left:16px;">${r.is_active?'Active':'Inactive'}</span>
-      </div>`).join('');
+        <div style="display:flex;gap:16px;text-align:center;flex-shrink:0;">
+          <div><div class="leader-count">${r.total}</div><div class="leader-sub">orders</div></div>
+          <div><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">delivered</div></div>
+          <div><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancelled</div></div>
+          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">revenue</div></div>
+        </div>
+        <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="margin-left:12px;">${r.is_active?'Active':'Inactive'}</span>
+      </div>`;
+    }).join('');
+
+    // Detail table
+    const tbody = document.getElementById('perf-detail-body');
+    if (tbody) tbody.innerHTML = sorted.map((r, i) => {
+      const rateColor = r.completionRate >= 75 ? 'var(--green)' : r.completionRate >= 50 ? 'var(--amber)' : 'var(--red)';
+      return `<tr style="border-bottom:1px solid var(--card-border);">
+        <td style="padding:10px 16px;color:var(--text3);">${i+1}</td>
+        <td style="padding:10px 16px;">
+          <div style="font-weight:600;color:var(--white);font-size:0.85rem;">${r.full_name}</div>
+          <div style="font-size:0.7rem;color:var(--text3);">${r.ref_code||'—'} · ${r.phone||''}</div>
+        </td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--purple-light);">${r.total}</td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);">${r.delivered_paid}</td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--amber);">${r.delivered_awaiting}</td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--text3);">${r.pending + r.assigned}</td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--red);">${r.cancelled}</td>
+        <td style="padding:10px 16px;text-align:center;">
+          <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+            <div style="width:50px;height:6px;background:var(--card-border);border-radius:99px;">
+              <div style="width:${r.completionRate}%;height:100%;background:${rateColor};border-radius:99px;"></div>
+            </div>
+            <span style="font-weight:700;color:${rateColor};font-size:0.8rem;">${r.completionRate}%</span>
+          </div>
+        </td>
+        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--green);font-size:0.8rem;">₦${r.value.toLocaleString()}</td>
+        <td style="padding:10px 16px;text-align:center;"><span class="badge ${r.is_active?'badge-active':'badge-inactive'}">${r.is_active?'Active':'Inactive'}</span></td>
+      </tr>`;
+    }).join('');
+
   } catch(e) { showToast('Failed to load performance', 'error'); }
 }
 
