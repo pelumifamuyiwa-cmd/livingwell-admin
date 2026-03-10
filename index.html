@@ -3116,9 +3116,9 @@ function renderPartnerStockView() {
 
   // Summary stats
   const totalSent = data.reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_confirmed||0), 0);
+  const totalConfirmed = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
   const awaitingConfirm = data.filter(a=>!a.confirmed).reduce((s,a) => s + (a.quantity_sent||0), 0);
-  const totalRemaining = data.filter(a=>a.confirmed).reduce((s,a) => s + (a.quantity_remaining||0), 0);
+  const totalRemaining = 0; // tracked via main stock table
 
   document.getElementById('ps-total-sent').textContent = totalSent;
   document.getElementById('ps-confirmed').textContent = totalConfirmed;
@@ -3126,14 +3126,13 @@ function renderPartnerStockView() {
   document.getElementById('ps-remaining').textContent = totalRemaining;
   document.getElementById('ps-remaining').style.color = totalRemaining <= 20 ? 'var(--red)' : 'var(--green)';
 
-  // Current balance per product (all time, confirmed only)
-  const allConfirmed = currentPartnerStockData.filter(a => a.confirmed);
+  // Current balance per product (all time, all records)
   const balanceMap = {};
-  allConfirmed.forEach(a => {
+  currentPartnerStockData.forEach(a => {
     const pid = a.product_id;
-    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', remaining: 0, sent: 0 };
-    balanceMap[pid].remaining += a.quantity_remaining||0;
-    balanceMap[pid].sent += a.quantity_confirmed||0;
+    if (!balanceMap[pid]) balanceMap[pid] = { name: a.products?.name||'—', sent: 0, confirmed: 0 };
+    balanceMap[pid].sent += a.quantity_sent||0;
+    if (a.confirmed) balanceMap[pid].confirmed += a.quantity_sent||0;
   });
 
   const balanceEl = document.getElementById('ps-balance-list');
@@ -3145,13 +3144,13 @@ function renderPartnerStockView() {
       <thead><tr><th>Product</th><th>Total Received</th><th>Remaining</th><th>Used</th></tr></thead>
       <tbody>` +
       balanceEntries.map(b => {
-        const used = b.sent - b.remaining;
-        const pct = b.sent > 0 ? Math.round((b.remaining/b.sent)*100) : 0;
+        const pending = b.sent - b.confirmed;
+        const pct = b.sent > 0 ? Math.round((b.confirmed/b.sent)*100) : 0;
         return `<tr>
           <td style="font-weight:600;font-size:0.82rem;">${b.name}</td>
           <td class="td-mono">${b.sent}</td>
-          <td class="td-mono" style="color:${b.remaining<=10?'var(--red)':'var(--green)'};font-weight:700;">${b.remaining} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
-          <td class="td-mono" style="color:var(--text3);">${used}</td>
+          <td class="td-mono" style="color:var(--green);font-weight:700;">${b.confirmed} <span style="font-size:0.65rem;font-weight:400;color:var(--text3);">(${pct}%)</span></td>
+          <td class="td-mono" style="color:${pending>0?'var(--amber)':'var(--text3)'};">${pending}</td>
         </tr>`;
       }).join('') +
       `</tbody></table></div>`;
@@ -3163,15 +3162,13 @@ function renderPartnerStockView() {
     logEl.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:8px 0;">No stock movements in this period</div>';
   } else {
     logEl.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Product</th><th>Sent</th><th>Confirmed</th><th>Remaining</th><th>Status</th></tr></thead>
+      <thead><tr><th>Date</th><th>Product</th><th>Qty Sent</th><th>Status</th></tr></thead>
       <tbody>` +
       data.map(a => `<tr>
         <td style="font-size:0.75rem;color:var(--text3);">${new Date(a.sent_at).toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'})}</td>
         <td style="font-size:0.82rem;font-weight:600;">${a.products?.name||'—'}</td>
         <td class="td-mono">${a.quantity_sent}</td>
-        <td class="td-mono" style="color:${a.confirmed?'var(--green)':'var(--amber)'};">${a.confirmed ? a.quantity_confirmed : '—'}</td>
-        <td class="td-mono" style="color:${(a.quantity_remaining||0)<=10?'var(--red)':'var(--text2)'};">${a.confirmed ? a.quantity_remaining : '—'}</td>
-        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'Confirmed':'Pending'}</span></td>
+        <td><span class="badge ${a.confirmed?'badge-active':'badge-owner'}">${a.confirmed?'✓ Confirmed':'Awaiting'}</span></td>
       </tr>`).join('') +
       `</tbody></table></div>`;
   }
@@ -3313,21 +3310,19 @@ async function confirmSendStock() {
       logistics_partner_id: partnerId,
       product_id: productId,
       quantity_sent: qty,
-      quantity_confirmed: 0,
-      quantity_remaining: 0,
       confirmed: false,
       sent_at: new Date().toISOString()
     }, { Prefer: 'return=minimal' });
-    // Deduct from main stock
+    // Deduct from main stock immediately
     const mainStock = await api(`stock?product_id=eq.${productId}&select=*`);
     if (mainStock?.length) {
-      const newQty = Math.max(0, (mainStock[0].quantity||0) - qty);
-      await api(`stock?product_id=eq.${productId}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
+      const newQty = Math.max(0, (parseInt(mainStock[0].quantity)||0) - qty);
+      await api(`stock?product_id=eq.${productId}`, 'PATCH', { quantity: newQty, updated_at: new Date().toISOString() }, { Prefer: 'return=minimal' });
     }
     closeModal('modal-send-stock');
-    showToast(`${qty} units of ${productName} sent to ${partnerName}!`, 'success');
+    showToast(`✅ ${qty} units of ${productName} sent to ${partnerName}!`, 'success');
     loadLogisticsPage();
-    loadStockPage();
+    loadStock();
   } catch(e) { showToast('Failed to send stock: ' + e.message, 'error'); }
 }
 
