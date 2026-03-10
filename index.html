@@ -1256,6 +1256,16 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
 
+      <!-- Low Stock Alert Banner -->
+      <div id="low-stock-alert" style="display:none;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);border-radius:14px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" width="20" height="20" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div style="flex:1;">
+          <div style="font-size:0.85rem;font-weight:700;color:#f87171;">Low Stock Alert</div>
+          <div id="low-stock-alert-text" style="font-size:0.78rem;color:var(--text2);margin-top:2px;"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('logistics')" style="font-size:0.75rem;">View Stock →</button>
+      </div>
+
       <div class="two-col">
         <!-- Recent Orders -->
         <div class="card">
@@ -1344,21 +1354,25 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
       <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap:wrap;gap:10px;">
           <div class="card-title">All Orders</div>
-          <div class="card-actions">
+          <div class="card-actions" style="flex-wrap:wrap;gap:8px;">
             <div class="search-wrap">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" class="search-input" placeholder="Search orders..." oninput="filterOrders(this.value)">
+              <input type="text" class="search-input" placeholder="Search name, location, rep..." oninput="filterOrders(this.value)">
             </div>
-            <select class="filter-select" onchange="filterOrdersByStatus(this.value)">
+            <select class="filter-select" id="orders-status-filter" onchange="applyOrderFilters()">
               <option value="">All Status</option>
               <option value="pending">Pending</option>
               <option value="assigned">Assigned</option>
+              <option value="in_transit">In Transit</option>
               <option value="delivered_payment_made">Delivered - Paid</option>
               <option value="delivered_awaiting_payment">Delivered - Awaiting Pay</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <input type="date" class="filter-select" id="orders-date-from" onchange="applyOrderFilters()" style="font-size:0.78rem;" title="From date">
+            <input type="date" class="filter-select" id="orders-date-to" onchange="applyOrderFilters()" style="font-size:0.78rem;" title="To date">
+            <button class="btn btn-ghost btn-sm" onclick="clearOrderFilters()" style="font-size:0.75rem;">Clear</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -2520,9 +2534,9 @@ async function loadDashboard() {
           <tr>
             <td class="td-name">${o.customer_name}</td>
             <td style="color:var(--text2);font-size:0.8rem;">${o.products?.name?.substring(0,25)||'—'}...</td>
-            <td><span style="font-size:0.75rem;font-weight:600;color:var(--purple-light);">${o.profiles?.ref_code||'—'}</span></td>
+            <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
             <td class="td-amount" style="color:var(--green);">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
-            <td><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
           </tr>`).join('');
       }
     }
@@ -2554,6 +2568,22 @@ async function loadDashboard() {
           </div>
         </div>`).join('');
     }
+
+    // Low stock check
+    try {
+      const stockData = await api('logistics_stock?select=*,products(name),logistics_partners(name)');
+      const lowItems = (stockData||[]).filter(s => (s.quantity_remaining||0) <= 5 && s.confirmed);
+      const alertEl = document.getElementById('low-stock-alert');
+      const alertText = document.getElementById('low-stock-alert-text');
+      if (alertEl) {
+        if (lowItems.length > 0) {
+          alertEl.style.display = 'flex';
+          alertText.textContent = lowItems.map(s => `${s.logistics_partners?.name||'Partner'}: ${s.products?.name||'Product'} (${s.quantity_remaining} left)`).join(' · ');
+        } else {
+          alertEl.style.display = 'none';
+        }
+      }
+    } catch(e) {}
 
   } catch(e) {
     showToast('Failed to load dashboard: ' + e.message, 'error');
@@ -2712,38 +2742,70 @@ function renderOrders(orders) {
       <td style="font-size:0.8rem;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.products?.name||'—'}</td>
       <td class="td-mono">${o.quantity}</td>
       <td class="td-amount" style="color:var(--green);">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
-      <td><span style="font-size:0.75rem;font-weight:600;color:var(--purple-light);">${o.profiles?.ref_code||'—'}</span></td>
+      <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
       <td style="font-size:0.8rem;color:var(--text2);">${o.delivery_location}</td>
-      <td><span class="badge badge-${o.status}">${o.status}</span></td>
+      <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
       <td class="td-mono">${new Date(o.created_at).toLocaleDateString('en-GB')}</td>
       <td>
         <div class="row-actions">
           ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
           ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>` : ''}
-          ${o.status === 'pending' ? `<button class="btn btn-red btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
+          ${o.status === 'pending' ? `<button class="btn btn-red btn-sm" onclick="cancelOrderWithReason('${o.id}')">Cancel</button>` : ''}
           ${(o.status === 'assigned' || o.status === 'in_transit') ? `<button class="btn btn-green btn-sm" onclick="openWhatsAppFromOrder('${o.id}')">
             <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
           </button>` : ''}
+          ${o.status === 'delivered_awaiting_payment' ? `<button class="btn btn-green btn-sm" onclick="recordPayment('${o.id}','${o.customer_name}',${parseFloat(o.total_price||0)})">💰 Record Pay</button>` : ''}
+          ${o.cancellation_reason ? `<span title="${o.cancellation_reason}" style="font-size:0.7rem;color:var(--red);cursor:help;">⚠ ${o.cancellation_reason.substring(0,20)}${o.cancellation_reason.length>20?'...':''}</span>` : ''}
         </div>
       </td>
     </tr>`).join('');
 }
 
 function filterOrders(val) {
-  const filtered = allOrders.filter(o =>
-    o.customer_name?.toLowerCase().includes(val.toLowerCase()) ||
-    o.delivery_location?.toLowerCase().includes(val.toLowerCase())
-  );
-  renderOrders(filtered);
+  applyOrderFilters();
 }
 
 function filterOrdersByStatus(status) {
-  if (!status) {
-    // Default: hide cancelled
-    renderOrders(allOrders.filter(o => o.status !== 'cancelled'));
-  } else {
-    renderOrders(allOrders.filter(o => o.status === status));
+  applyOrderFilters();
+}
+
+function applyOrderFilters() {
+  const search = document.querySelector('.search-input')?.value?.toLowerCase() || '';
+  const status = document.getElementById('orders-status-filter')?.value || '';
+  const from   = document.getElementById('orders-date-from')?.value || '';
+  const to     = document.getElementById('orders-date-to')?.value || '';
+
+  let filtered = [...allOrders];
+
+  if (search) {
+    filtered = filtered.filter(o =>
+      o.customer_name?.toLowerCase().includes(search) ||
+      o.delivery_location?.toLowerCase().includes(search) ||
+      o.profiles?.full_name?.toLowerCase().includes(search) ||
+      o.profiles?.ref_code?.toLowerCase().includes(search)
+    );
   }
+  if (status) {
+    filtered = filtered.filter(o => o.status === status);
+  } else {
+    filtered = filtered.filter(o => o.status !== 'cancelled');
+  }
+  if (from) filtered = filtered.filter(o => o.created_at >= from);
+  if (to)   filtered = filtered.filter(o => o.created_at <= to + 'T23:59:59');
+
+  renderOrders(filtered);
+}
+
+function clearOrderFilters() {
+  const s = document.querySelector('.search-input');
+  const sf = document.getElementById('orders-status-filter');
+  const df = document.getElementById('orders-date-from');
+  const dt = document.getElementById('orders-date-to');
+  if (s) s.value = '';
+  if (sf) sf.value = '';
+  if (df) df.value = '';
+  if (dt) dt.value = '';
+  renderOrders(allOrders.filter(o => o.status !== 'cancelled'));
 }
 
 function openEditOrderModal(id, name, phone, location, qty) {
@@ -2787,6 +2849,65 @@ async function cancelOrder(id) {
     },
     'Cancel Order'
   );
+}
+
+function cancelOrderWithReason(id) {
+  document.getElementById('cancel-order-id').value = id;
+  document.getElementById('cancel-reason-select').value = '';
+  document.getElementById('cancel-reason-custom').value = '';
+  document.getElementById('custom-reason-wrap').style.display = 'none';
+  document.getElementById('modal-cancel-reason').classList.add('open');
+}
+
+function toggleCustomReason() {
+  const val = document.getElementById('cancel-reason-select').value;
+  document.getElementById('custom-reason-wrap').style.display = val === 'Other' ? 'block' : 'none';
+}
+
+async function submitCancelOrder() {
+  const id = document.getElementById('cancel-order-id').value;
+  const sel = document.getElementById('cancel-reason-select').value;
+  const custom = document.getElementById('cancel-reason-custom').value.trim();
+  const reason = sel === 'Other' ? custom : sel;
+  if (!reason) { showToast('Please select a cancellation reason', 'error'); return; }
+  try {
+    await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled', cancellation_reason: reason }, { Prefer: 'return=minimal' });
+    closeModal('modal-cancel-reason');
+    showToast('Order cancelled — reason recorded', 'success');
+    loadOrders();
+  } catch(e) { showToast('Failed to cancel order', 'error'); }
+}
+
+function recordPayment(orderId, customerName, amount) {
+  document.getElementById('record-pay-order-id').value = orderId;
+  document.getElementById('record-pay-sub').textContent = `Record payment from ${customerName}`;
+  document.getElementById('record-pay-amount').value = amount;
+  document.getElementById('record-pay-method').value = 'cash';
+  document.getElementById('record-pay-note').value = '';
+  document.getElementById('modal-record-payment').classList.add('open');
+}
+
+async function submitRecordPayment() {
+  const orderId = document.getElementById('record-pay-order-id').value;
+  const amount = parseFloat(document.getElementById('record-pay-amount').value);
+  const method = document.getElementById('record-pay-method').value;
+  const note   = document.getElementById('record-pay-note').value.trim();
+  if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+  try {
+    // Update order status
+    await api(`orders?id=eq.${orderId}`, 'PATCH', { status: 'delivered_payment_made' }, { Prefer: 'return=minimal' });
+    // Record payment
+    await api('payments', 'POST', {
+      order_id: orderId,
+      amount_received: amount,
+      payment_method: method,
+      notes: note,
+      confirmed_at: new Date().toISOString()
+    });
+    closeModal('modal-record-payment');
+    showToast('Payment recorded successfully! ✓', 'success');
+    loadOrders();
+  } catch(e) { showToast('Failed to record payment: ' + e.message, 'error'); }
 }
 
 // ── ASSIGN LOGISTICS ──
@@ -4679,6 +4800,65 @@ function closeWeeklyPerf() {
 </div>
 
 <!-- ══ CLEAR ADMIN DATA MODAL ══ -->
+<!-- Cancel with Reason Modal -->
+<div class="modal-overlay" id="modal-cancel-reason">
+  <div class="modal">
+    <div class="modal-title">Cancel Order</div>
+    <div class="modal-sub">Please provide a reason for cancellation</div>
+    <input type="hidden" id="cancel-order-id">
+    <div class="form-group">
+      <label class="form-label">Cancellation Reason</label>
+      <select class="form-input" id="cancel-reason-select" onchange="toggleCustomReason()">
+        <option value="">Select a reason...</option>
+        <option value="Customer requested cancellation">Customer requested cancellation</option>
+        <option value="Wrong order placed">Wrong order placed</option>
+        <option value="Out of stock">Out of stock</option>
+        <option value="Customer unreachable">Customer unreachable</option>
+        <option value="Delivery location too far">Delivery location too far</option>
+        <option value="Duplicate order">Duplicate order</option>
+        <option value="Other">Other (specify below)</option>
+      </select>
+    </div>
+    <div class="form-group" id="custom-reason-wrap" style="display:none;">
+      <label class="form-label">Specify Reason</label>
+      <input type="text" class="form-input" id="cancel-reason-custom" placeholder="Enter reason...">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-cancel-reason')">Back</button>
+      <button class="btn btn-red" onclick="submitCancelOrder()">Confirm Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal-overlay" id="modal-record-payment">
+  <div class="modal">
+    <div class="modal-title">Record Payment</div>
+    <div class="modal-sub" id="record-pay-sub">Mark payment as received</div>
+    <input type="hidden" id="record-pay-order-id">
+    <div class="form-group">
+      <label class="form-label">Amount Received (₦)</label>
+      <input type="number" class="form-input" id="record-pay-amount" placeholder="0.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Payment Method</label>
+      <select class="form-input" id="record-pay-method">
+        <option value="cash">Cash</option>
+        <option value="transfer">Bank Transfer</option>
+        <option value="pos">POS</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note (optional)</label>
+      <input type="text" class="form-input" id="record-pay-note" placeholder="Any additional info...">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-record-payment')">Cancel</button>
+      <button class="btn btn-green" onclick="submitRecordPayment()">✓ Confirm Payment</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-clear-data">
   <div class="modal">
     <div class="modal-header">
