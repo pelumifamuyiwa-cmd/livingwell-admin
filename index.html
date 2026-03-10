@@ -2695,8 +2695,13 @@ async function saveAssignment() {
     await api(`deliveries`, 'POST', { order_id: orderId, logistics_partner_id: logisticsId, notes, status: 'assigned' }, { Prefer: 'return=minimal' });
     await api(`orders?id=eq.${orderId}`, 'PATCH', { status: 'assigned' }, { Prefer: 'return=minimal' });
     closeModal('modal-assign');
-    showToast('Order assigned successfully!', 'success');
+    showToast('Order assigned! Opening WhatsApp...', 'success');
     loadOrders();
+    // Auto-open WhatsApp immediately after assignment
+    const waBtn = document.getElementById('whatsapp-send-btn');
+    if (waBtn && waBtn.href && waBtn.href !== '#' && !waBtn.href.endsWith('#')) {
+      setTimeout(() => { window.open(waBtn.href, '_blank'); }, 400);
+    }
   } catch(e) { showToast('Failed to assign: ' + e.message, 'error'); }
 }
 
@@ -2718,17 +2723,21 @@ function renderDeliveries(deliveries) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3);">No deliveries found</td></tr>';
     return;
   }
-  tbody.innerHTML = deliveries.map(d => `
+  tbody.innerHTML = deliveries.map(d => {
+    const rawDate = d.assigned_at || d.created_at || null;
+    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+    return `
     <tr>
       <td class="td-name">${d.orders?.customer_name||'—'}</td>
-      <td style="font-size:0.8rem;color:var(--text2);">${d.orders?.products?.name?.substring(0,20)||'—'}...</td>
+      <td style="font-size:0.8rem;color:var(--text2);">${(d.orders?.products?.name||'—').substring(0,22)}</td>
       <td style="font-weight:600;color:var(--purple-light);">${d.logistics_partners?.name||'—'}</td>
       <td style="font-size:0.8rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
       <td class="td-amount" style="color:var(--green);">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
       <td><span class="badge badge-${d.status}">${d.status}</span></td>
-      <td class="td-mono">${new Date(d.created_at).toLocaleDateString('en-GB')}</td>
+      <td class="td-mono">${dateStr}</td>
       <td style="color:var(--text3);">—</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function filterDeliveriesByStatus(status) {
