@@ -1868,8 +1868,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <div class="modal-overlay" id="modal-add-logistics">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Add Logistics Partner</div>
-      <div class="modal-sub">Add a new delivery partner</div>
+      <div class="modal-title" id="modal-add-logistics-title">Add Logistics Partner</div>
+      <div class="modal-sub" id="modal-add-logistics-sub">Add a new delivery partner</div>
     </div>
     <div class="form-grid">
       <div class="form-group full">
@@ -1887,7 +1887,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-logistics')">Cancel</button>
-      <button class="btn btn-purple" onclick="saveLogistics()">Add Partner</button>
+      <button class="btn btn-purple" id="modal-add-logistics-btn" onclick="saveLogistics()">Add Partner</button>
     </div>
   </div>
 </div>
@@ -3312,7 +3312,16 @@ async function loadLogisticsPartners() {
   } catch(e) {}
 }
 
-function openAddLogisticsModal() { document.getElementById('modal-add-logistics').classList.add('open'); }
+function openAddLogisticsModal() {
+  editingLogisticsId = null;
+  document.getElementById('logi-name').value='';
+  document.getElementById('logi-phone').value='';
+  document.getElementById('logi-area').value='';
+  document.getElementById('modal-add-logistics-title').textContent = 'Add Logistics Partner';
+  document.getElementById('modal-add-logistics-sub').textContent = 'Add a new delivery partner';
+  document.getElementById('modal-add-logistics-btn').textContent = 'Add Partner';
+  document.getElementById('modal-add-logistics').classList.add('open');
+}
 
 function createLogisticsAccount(id, name) {
   document.getElementById('cla-partner-id').value = id;
@@ -3445,27 +3454,44 @@ async function confirmSendStock() {
   } catch(e) { showToast('Failed to send stock: ' + e.message, 'error'); }
 }
 
+let editingLogisticsId = null;
+
 async function saveLogistics() {
   const name = document.getElementById('logi-name').value.trim();
   const phone = document.getElementById('logi-phone').value.trim();
   const area = document.getElementById('logi-area').value.trim();
   if (!name) { showToast('Partner name is required', 'error'); return; }
   try {
-    await api(`logistics_partners`, 'POST', { name, phone, coverage_area: area }, { Prefer: 'return=minimal' });
+    if (editingLogisticsId) {
+      // PATCH — update existing partner
+      await api(`logistics_partners?id=eq.${editingLogisticsId}`, 'PATCH', { name, phone, coverage_area: area }, { Prefer: 'return=minimal' });
+      showToast('Partner updated!', 'success');
+    } else {
+      // POST — create new partner
+      await api(`logistics_partners`, 'POST', { name, phone, coverage_area: area }, { Prefer: 'return=minimal' });
+      showToast('Logistics partner added!', 'success');
+    }
+    editingLogisticsId = null;
     closeModal('modal-add-logistics');
-    showToast('Logistics partner added!', 'success');
     document.getElementById('logi-name').value='';
     document.getElementById('logi-phone').value='';
     document.getElementById('logi-area').value='';
+    document.getElementById('modal-add-logistics-title').textContent = 'Add Logistics Partner';
+    document.getElementById('modal-add-logistics-sub').textContent = 'Add a new delivery partner';
+    document.getElementById('modal-add-logistics-btn').textContent = 'Add Partner';
     loadLogisticsPage();
     loadLogisticsPartners();
-  } catch(e) { showToast('Failed to add logistics', 'error'); }
+  } catch(e) { showToast('Failed to save: ' + e.message, 'error'); }
 }
 
 function editLogistics(id, name, phone, area) {
+  editingLogisticsId = id;
   document.getElementById('logi-name').value = name;
   document.getElementById('logi-phone').value = phone;
   document.getElementById('logi-area').value = area;
+  document.getElementById('modal-add-logistics-title').textContent = 'Edit Logistics Partner';
+  document.getElementById('modal-add-logistics-sub').textContent = 'Update partner details';
+  document.getElementById('modal-add-logistics-btn').textContent = 'Save Changes';
   document.getElementById('modal-add-logistics').classList.add('open');
 }
 
