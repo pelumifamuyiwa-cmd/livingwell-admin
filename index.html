@@ -48,7 +48,7 @@ body {
 }
 
 /* ── SCROLLBAR ── */
-::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar { width: 7px; }
 ::-webkit-scrollbar-track { background: var(--bg2); }
 ::-webkit-scrollbar-thumb { background: var(--purple); border-radius: 4px; }
 
@@ -235,25 +235,25 @@ select.form-input option {
 }
 
 .nav-section-label {
-  font-size: 0.62rem;
+  font-size: 0.56rem;
   font-weight: 700;
   color: var(--text3);
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
-  padding: 0 12px;
-  margin: 16px 0 8px;
+  padding: 0 10px;
+  margin: 12px 0 4px;
 }
 
 .nav-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 12px;
-  border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 500;
   color: var(--text2);
   transition: all 0.15s;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   position: relative;
 }
 
@@ -279,8 +279,8 @@ select.form-input option {
 }
 
 .nav-icon {
-  width: 36px; height: 36px;
-  border-radius: 10px;
+  width: 28px; height: 28px;
+  border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.04);
   flex-shrink: 0;
@@ -291,7 +291,7 @@ select.form-input option {
   background: var(--purple-dim);
 }
 
-.nav-icon svg { width: 16px; height: 16px; }
+.nav-icon svg { width: 14px; height: 14px; }
 
 .nav-badge {
   margin-left: auto;
@@ -3922,7 +3922,7 @@ function downloadReconPDF() {
   const date = document.getElementById('recon-date').value;
   if (!date) { showToast('Select a date first', 'error'); return; }
 
-  const printArea = document.getElementById('recon-content');
+  const printArea = document.getElementById('recon-list');
   if (!printArea) { showToast('No report to download', 'error'); return; }
 
   const formatted = new Date(date + 'T00:00:00').toLocaleDateString('en-NG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
