@@ -1006,6 +1006,42 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .search-input { width: 160px; }
 }
+
+/* ── RECEIPTS ── */
+.receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 4px 0;
+}
+.receipt-card {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  background: var(--bg2);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.receipt-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+.receipt-card img { width: 100%; height: 110px; object-fit: cover; display: block; }
+.receipt-card-info { padding: 8px 10px; }
+.receipt-card-name { font-size: 0.72rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.receipt-card-date { font-size: 0.65rem; color: var(--text3); }
+#receipt-lightbox {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.88);
+  z-index: 9999; display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 14px;
+}
+#receipt-lightbox.open { display: flex; }
+#receipt-lightbox img { max-width: 90vw; max-height: 80vh; border-radius: 12px; object-fit: contain; }
+#receipt-lightbox-close {
+  position: absolute; top: 16px; right: 16px;
+  background: rgba(255,255,255,0.15); border: none; color: #fff;
+  border-radius: 50%; width: 36px; height: 36px; font-size: 1.1rem;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+#receipt-lightbox-label { font-size: 0.8rem; color: rgba(255,255,255,0.6); }
+
 </style>
 </head>
 <body>
@@ -1587,6 +1623,17 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
         <div id="recon-list">
           <div class="loading">Select a date to load reconciliation data...</div>
+        </div>
+      </div>
+
+      <!-- Remittance Receipts -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header">
+          <div class="card-title">🧾 Remittance Receipts</div>
+          <div class="card-sub">Proof of cash handover uploaded by logistics partners</div>
+        </div>
+        <div id="receipts-list">
+          <div class="loading">Select a date above to load receipts...</div>
         </div>
       </div>
     </div>
@@ -2307,6 +2354,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       </a>
     </div>
   </div>
+</div>
+
+<!-- Receipt Lightbox -->
+<div id="receipt-lightbox" onclick="closeReceiptLightbox()">
+  <button id="receipt-lightbox-close" onclick="closeReceiptLightbox()">✕</button>
+  <img id="receipt-lightbox-img" src="" alt="Receipt">
+  <div id="receipt-lightbox-label"></div>
 </div>
 
 <script>
@@ -3161,6 +3215,55 @@ async function saveStockUpdate() {
 }
 
 // ── RECONCILIATION ──
+// Silently delete receipts older than 30 days from storage + clear DB urls
+async function cleanOldReceipts() {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffISO = cutoff.toISOString();
+
+    // Find old deliveries that still have a receipt URL
+    const old = await api(
+      `deliveries?remitted_at=lt.${cutoffISO}&remittance_receipt_url=not.is.null&select=id,remittance_receipt_url`
+    ) || [];
+    if (!old.length) return;
+
+    // Delete each file from Supabase Storage
+    const fileNames = old
+      .map(d => {
+        const url = d.remittance_receipt_url;
+        if (!url) return null;
+        const parts = url.split('/remittance-receipts/');
+        return parts[1] || null;
+      })
+      .filter(Boolean);
+
+    if (fileNames.length) {
+      const tok = localStorage.getItem('lw_token') || SUPABASE_KEY;
+      await fetch(`${SUPABASE_URL}/storage/v1/object/remittance-receipts`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${tok}`,
+          'apikey': SUPABASE_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prefixes: fileNames })
+      });
+    }
+
+    // Clear the receipt URLs from the DB rows
+    for (const d of old) {
+      await api(`deliveries?id=eq.${d.id}`, 'PATCH',
+        { remittance_receipt_url: null },
+        { Prefer: 'return=minimal' }
+      );
+    }
+  } catch(e) {
+    // Silent — don't surface cleanup errors to user
+    console.warn('Receipt cleanup error:', e);
+  }
+}
+
 async function loadReconciliation() {
   let date = document.getElementById('recon-date').value;
   // Default to today if empty
@@ -3168,6 +3271,9 @@ async function loadReconciliation() {
     date = new Date().toISOString().split('T')[0];
     document.getElementById('recon-date').value = date;
   }
+
+  // Silently clean up receipts older than 30 days in the background
+  cleanOldReceipts();
 
   const reconEl = document.getElementById('recon-list');
   if (reconEl) reconEl.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);">Loading...</div>';
@@ -3284,7 +3390,50 @@ async function loadReconciliation() {
       </div>`;
     }).join('');
 
+    // Load remittance receipts for the same date
+    await loadRemittanceReceipts(date);
+
   } catch(e) { console.error(e); showToast('Failed to load reconciliation: ' + e.message, 'error'); }
+}
+
+async function loadRemittanceReceipts(date) {
+  const el = document.getElementById('receipts-list');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">Loading receipts...</div>';
+  try {
+    // Get all deliveries remitted on this date that have a receipt URL
+    const rows = await api(
+      `deliveries?remitted_at=gte.${date}T00:00:00&remitted_at=lte.${date}T23:59:59&remittance_receipt_url=not.is.null&select=remittance_receipt_url,remitted_at,logistics_partners(name)&order=remitted_at.desc`
+    ) || [];
+
+    if (!rows.length) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:0.85rem;">No receipts uploaded for this date.</div>';
+      return;
+    }
+
+    el.innerHTML = `<div class="receipt-grid">${rows.map(r => {
+      const name = r.logistics_partners?.name || 'Unknown';
+      const time = r.remitted_at ? new Date(r.remitted_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+      return `<div class="receipt-card" onclick="openReceiptLightbox('${r.remittance_receipt_url}','${name} · ${time}')">
+        <img src="${r.remittance_receipt_url}" alt="Receipt from ${name}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'110\'><rect fill=\'%23111\' width=\'160\' height=\'110\'></rect><text x=\'50%\' y=\'50%\' fill=\'%23555\' text-anchor=\'middle\' dy=\'.3em\' font-size=\'11\'>No preview</text></svg>'">
+        <div class="receipt-card-info">
+          <div class="receipt-card-name">${name}</div>
+          <div class="receipt-card-date">${time}</div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  } catch(e) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);">Could not load receipts.</div>';
+  }
+}
+
+function openReceiptLightbox(url, label) {
+  document.getElementById('receipt-lightbox-img').src = url;
+  document.getElementById('receipt-lightbox-label').textContent = label;
+  document.getElementById('receipt-lightbox').classList.add('open');
+}
+function closeReceiptLightbox() {
+  document.getElementById('receipt-lightbox').classList.remove('open');
 }
 
 // ── REPS ──
