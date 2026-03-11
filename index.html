@@ -1626,19 +1626,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
 
-      <!-- Remittance Receipts -->
-      <div class="card" style="margin-top:16px;">
-        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <div>
-            <div class="card-title">🧾 Remittance Receipts</div>
-            <div class="card-sub">Proof of cash handover uploaded by logistics partners</div>
-          </div>
-          <button class="btn btn-purple" onclick="loadAllReceipts()" style="font-size:0.75rem;white-space:nowrap;">View All</button>
-        </div>
-        <div id="receipts-list">
-          <div class="loading">Select a date above to load receipts...</div>
-        </div>
-      </div>
+
     </div>
 
     <!-- ══ EMAIL REPORTS PAGE ══ -->
@@ -2364,6 +2352,18 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   <button id="receipt-lightbox-close" onclick="closeReceiptLightbox()">✕</button>
   <img id="receipt-lightbox-img" src="" alt="Receipt">
   <div id="receipt-lightbox-label"></div>
+</div>
+
+<!-- Receipt Viewer Modal -->
+<div class="modal-overlay" id="modal-receipt-viewer" style="z-index:1000;" onclick="if(event.target===this)closeReceiptViewer()">
+  <div class="modal-content" style="max-width:460px;width:90%;border-radius:20px;background:var(--card-bg);padding:24px;position:relative;">
+    <button onclick="closeReceiptViewer()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text3);font-size:1.2rem;cursor:pointer;">✕</button>
+    <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;">🧾 Remittance Receipt</div>
+    <div id="rv-meta" style="font-size:0.78rem;color:var(--text3);margin-bottom:16px;"></div>
+    <div id="rv-body" style="text-align:center;">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -3386,22 +3386,22 @@ async function loadReconciliation() {
               <th>Customer</th><th>Product</th><th>Qty</th><th>Rep</th><th>Amount</th><th>Status</th>
             </tr></thead>
             <tbody>
-              ${g.orders.map(o => `<tr>
-                <td class="td-name">${o.customer_name||'—'}</td>
+              ${g.orders.map(o => {
+                const isPaid = o.status === 'delivered_payment_made';
+                const clickable = isPaid ? `style="cursor:pointer;" onclick="viewDeliveryReceipt('${o.id}','${(o.customer_name||'').replace(/'/g,"\'")}','${(o.products?.name||'').replace(/'/g,"\'")}','${parseFloat(o.total_price||0)}')" title="Click to view receipt"` : '';
+                return `<tr ${clickable}>
+                <td class="td-name">${o.customer_name||'—'}${isPaid ? ' <span style="font-size:0.6rem;color:#a78bfa;">🧾</span>' : ''}</td>
                 <td style="font-size:0.8rem;color:var(--text2);">${o.products?.name||'—'}</td>
                 <td class="td-mono">${o.quantity||'—'}</td>
                 <td><span style="font-size:0.72rem;font-weight:600;color:var(--purple-light);">${o.profiles?.ref_code||'—'}</span></td>
                 <td class="td-amount" style="color:${o.status==='delivered_payment_made'?'var(--green)':o.status==='delivered_awaiting_payment'?'var(--amber)':'var(--text3)'};">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
                 <td><span class="badge ${statusColors[o.status]||'badge-pending'}">${statusLabels[o.status]||o.status.replace(/_/g,' ')}</span></td>
-              </tr>`).join('')}
+              </tr>`;}).join('')}
             </tbody>
           </table>
         </div>
       </div>`;
     }).join('');
-
-    // Load remittance receipts for the same date
-    await loadRemittanceReceipts(date);
 
   } catch(e) { console.error(e); showToast('Failed to load reconciliation: ' + e.message, 'error'); }
 }
@@ -3501,6 +3501,70 @@ function openReceiptLightbox(url, label) {
 }
 function closeReceiptLightbox() {
   document.getElementById('receipt-lightbox').classList.remove('open');
+}
+
+async function viewDeliveryReceipt(orderId, customerName, productName, amount) {
+  // Open modal immediately
+  document.getElementById('rv-meta').textContent = `${customerName} · ${productName} · ₦${parseFloat(amount).toLocaleString()}`;
+  document.getElementById('rv-body').innerHTML = '<div class="loading">Looking up receipt...</div>';
+  document.getElementById('modal-receipt-viewer').classList.add('open');
+
+  try {
+    // Find delivery for this order that has a receipt
+    const rows = await api(
+      `deliveries?order_id=eq.${orderId}&select=remittance_receipt_url,remitted_at,remitted_to_admin,logistics_partners(name)`
+    ) || [];
+
+    const delivery = rows[0];
+    if (!delivery) {
+      document.getElementById('rv-body').innerHTML = '<div style="padding:20px;color:var(--text3);text-align:center;">No delivery record found for this order.</div>';
+      return;
+    }
+
+    const partner = delivery.logistics_partners?.name || '—';
+    const remittedAt = delivery.remitted_at ? new Date(delivery.remitted_at).toLocaleString('en-NG', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }) : null;
+    const isRemitted = delivery.remitted_to_admin;
+    const receiptUrl = delivery.remittance_receipt_url;
+
+    if (!isRemitted) {
+      document.getElementById('rv-body').innerHTML = `
+        <div style="padding:24px;text-align:center;">
+          <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
+          <div style="font-weight:600;color:var(--text);margin-bottom:6px;">Not yet remitted</div>
+          <div style="font-size:0.78rem;color:var(--text3);">Cash has not been handed over to admin yet.</div>
+          <div style="margin-top:12px;font-size:0.78rem;color:var(--text2);">Logistics Partner: <strong>${partner}</strong></div>
+        </div>`;
+      return;
+    }
+
+    if (!receiptUrl) {
+      document.getElementById('rv-body').innerHTML = `
+        <div style="padding:24px;text-align:center;">
+          <div style="font-size:2rem;margin-bottom:10px;">✅</div>
+          <div style="font-weight:600;color:var(--green);margin-bottom:6px;">Cash Remitted</div>
+          <div style="font-size:0.78rem;color:var(--text3);">No receipt photo was uploaded for this remittance.</div>
+          <div style="margin-top:10px;font-size:0.78rem;color:var(--text2);">Partner: <strong>${partner}</strong>${remittedAt ? ` · ${remittedAt}` : ''}</div>
+        </div>`;
+      return;
+    }
+
+    // Has receipt — show it
+    document.getElementById('rv-body').innerHTML = `
+      <div style="margin-bottom:10px;font-size:0.78rem;color:var(--text2);">
+        Partner: <strong style="color:var(--text);">${partner}</strong>${remittedAt ? ` · Remitted ${remittedAt}` : ''}
+      </div>
+      <img src="${receiptUrl}" alt="Receipt"
+        style="width:100%;max-height:340px;object-fit:contain;border-radius:12px;border:1px solid var(--card-border);cursor:zoom-in;"
+        onclick="openReceiptLightbox('${receiptUrl}','${customerName} · ${partner}')"
+        onerror="this.outerHTML='<div style=\'padding:20px;color:var(--text3);text-align:center;\'>Could not load receipt image.</div>'">
+      <div style="margin-top:10px;font-size:0.7rem;color:var(--text3);text-align:center;">Tap image to view full screen</div>`;
+  } catch(e) {
+    document.getElementById('rv-body').innerHTML = `<div style="padding:20px;color:var(--red);text-align:center;">Error: ${e.message}</div>`;
+  }
+}
+
+function closeReceiptViewer() {
+  document.getElementById('modal-receipt-viewer').classList.remove('open');
 }
 
 // ── REPS ──
