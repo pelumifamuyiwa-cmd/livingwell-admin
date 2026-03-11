@@ -2743,7 +2743,7 @@ function renderOrders(orders) {
       <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
       <td style="font-size:0.8rem;color:var(--text2);">${o.delivery_location}</td>
       <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
-      <td class="td-mono" style="font-size:0.75rem;">${fmtDateTime(o.created_at)}</td>
+      <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${o.created_at ? new Date(o.created_at).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit',hour12:true}) + ', ' + new Date(o.created_at).toLocaleDateString('en-NG',{day:'numeric',month:'short'}) : '—'}</td>
       <td>
         <div class="row-actions">
           ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
