@@ -3304,19 +3304,10 @@ async function loadReconciliation() {
   const partnerFilter = logSel?.value || '';
 
   try {
-    // Load orders for this date: created on this date OR payment confirmed on this date
-    // We fetch both sets and merge/deduplicate
-    const [ordersCreated, ordersPaid] = await Promise.all([
-      api(`orders?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`),
-      api(`orders?status=eq.delivered_payment_made&updated_at=gte.${date}T00:00:00&updated_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`)
-    ]);
-    // Merge and deduplicate by id
-    const seen = new Set();
-    const merged = [...(ordersCreated||[]), ...(ordersPaid||[])].filter(o => {
-      if (seen.has(o.id)) return false;
-      seen.add(o.id); return true;
-    });
-    const orders = merged;
+    // Load ALL orders for this date by created_at
+    const orders = await api(
+      `orders?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`
+    ) || [];
 
     let data = orders || [];
 
