@@ -2923,11 +2923,18 @@ async function submitCancelOrder() {
   const reason = sel === 'Other' ? custom : sel;
   if (!reason) { showToast('Please select a cancellation reason', 'error'); return; }
   try {
-    await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled', cancellation_reason: reason }, { Prefer: 'return=minimal' });
+    try {
+      await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled', cancellation_reason: reason }, { Prefer: 'return=minimal' });
+    } catch(e) {
+      // If cancellation_reason column doesn't exist yet, cancel without it
+      if (e.message && (e.message.includes('cancellation_reason') || e.message.includes('column'))) {
+        await api(`orders?id=eq.${id}`, 'PATCH', { status: 'cancelled' }, { Prefer: 'return=minimal' });
+      } else { throw e; }
+    }
     closeModal('modal-cancel-reason');
-    showToast('Order cancelled — reason recorded', 'success');
+    showToast('Order cancelled', 'success');
     loadOrders();
-  } catch(e) { showToast('Failed to cancel order', 'error'); }
+  } catch(e) { showToast('Failed to cancel: ' + e.message, 'error'); }
 }
 
 function recordPayment(orderId, customerName, amount) {
@@ -3294,10 +3301,19 @@ async function loadReconciliation() {
   const partnerFilter = logSel?.value || '';
 
   try {
-    // Load ALL orders for that date (by created_at) with their deliveries
-    const orders = await api(
-      `orders?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`
-    );
+    // Load orders for this date: created on this date OR payment confirmed on this date
+    // We fetch both sets and merge/deduplicate
+    const [ordersCreated, ordersPaid] = await Promise.all([
+      api(`orders?created_at=gte.${date}T00:00:00&created_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`),
+      api(`orders?status=eq.delivered_payment_made&updated_at=gte.${date}T00:00:00&updated_at=lte.${date}T23:59:59&select=*,products(name),profiles(full_name,ref_code),deliveries(id,status,logistics_partner_id,assigned_at,logistics_partners(id,name))&order=created_at.desc`)
+    ]);
+    // Merge and deduplicate by id
+    const seen = new Set();
+    const merged = [...(ordersCreated||[]), ...(ordersPaid||[])].filter(o => {
+      if (seen.has(o.id)) return false;
+      seen.add(o.id); return true;
+    });
+    const orders = merged;
 
     let data = orders || [];
 
