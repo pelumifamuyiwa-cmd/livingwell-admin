@@ -2743,7 +2743,7 @@ function renderOrders(orders) {
       <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
       <td style="font-size:0.8rem;color:var(--text2);">${o.delivery_location}</td>
       <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
-      <td class="td-mono">${new Date(o.created_at).toLocaleDateString('en-GB')}</td>
+      <td class="td-mono" style="font-size:0.75rem;">${fmtDateTime(o.created_at)}</td>
       <td>
         <div class="row-actions">
           ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
@@ -3006,8 +3006,6 @@ function renderDeliveries(deliveries) {
     return;
   }
   tbody.innerHTML = deliveries.map(d => {
-    const rawDate = d.assigned_at || d.created_at || null;
-    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
     return `
     <tr>
       <td class="td-name">${d.orders?.customer_name||'—'}</td>
@@ -3015,9 +3013,9 @@ function renderDeliveries(deliveries) {
       <td style="font-weight:600;color:var(--purple-light);">${d.logistics_partners?.name||'—'}</td>
       <td style="font-size:0.8rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
       <td class="td-amount" style="color:var(--green);">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
-      <td><span class="badge badge-${d.status}">${d.status}</span></td>
-      <td class="td-mono">${dateStr}</td>
-      <td style="color:var(--text3);">—</td>
+      <td><span class="badge badge-${d.status}">${(d.status||'').replace(/_/g,' ')}</span></td>
+      <td class="td-mono" style="font-size:0.75rem;">${fmtDateTime(d.assigned_at || d.created_at)}</td>
+      <td class="td-mono" style="font-size:0.75rem;color:var(--green);">${fmtDateTime(d.delivered_at)}</td>
     </tr>`;
   }).join('');
 }
@@ -4055,6 +4053,12 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 });
 
 // ── TOAST ──
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' }) +
+    ' · ' + d.toLocaleTimeString('en-NG', { hour:'2-digit', minute:'2-digit', hour12:true });
+}
 function showToast(msg, type='') {
   const t = document.getElementById('toast');
   t.textContent = msg;
