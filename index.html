@@ -1735,37 +1735,111 @@ tr:hover td { background: rgba(255,255,255,0.02); }
           <div class="page-title">Sales Reps</div>
           <div class="page-sub">Manage your sales team</div>
         </div>
-        <button class="btn btn-purple" onclick="openAddRepModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Rep
-        </button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" onclick="openBulkCreateModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Bulk Create
+          </button>
+          <button class="btn btn-purple" onclick="openAddRepModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Rep
+          </button>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">All Sales Reps</div>
-          <div class="card-actions">
-            <div class="search-wrap">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" class="search-input" placeholder="Search reps...">
+
+      <!-- Stats row -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
+        <div class="stat-card green">
+          <div class="stat-label">Active Reps</div>
+          <div class="stat-value" id="rep-stat-active">—</div>
+          <div class="stat-sub">Currently active</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Inactive Reps</div>
+          <div class="stat-value" id="rep-stat-inactive">—</div>
+          <div class="stat-sub">Deactivated accounts</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-label">Total Reps</div>
+          <div class="stat-value" id="rep-stat-total">—</div>
+          <div class="stat-sub">All registered</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start;">
+        <!-- Rep list -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">All Sales Reps</div>
+            <div class="card-actions">
+              <div class="search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" class="search-input" id="rep-search" placeholder="Search reps..." oninput="filterReps()">
+              </div>
+              <select class="filter-select" id="rep-status-filter" onchange="filterReps()" style="font-size:0.75rem;padding:6px 10px;">
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
             </div>
           </div>
+          <div id="reps-list-grid" style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+            <div class="loading" style="grid-column:1/-1;">Loading reps...</div>
+          </div>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Ref Code</th>
-                <th>Phone</th>
-                <th>Total Orders</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="reps-body">
-              <tr><td colspan="6" class="loading">Loading reps...</td></tr>
-            </tbody>
-          </table>
+
+        <!-- Rep detail panel -->
+        <div class="card" id="rep-detail-panel" style="display:none;position:sticky;top:80px;">
+          <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:14px;">
+            <div>
+              <div class="card-title" id="rdp-name">Rep Details</div>
+              <div class="card-sub" id="rdp-refcode"></div>
+            </div>
+            <button onclick="closeRepDetail()" style="background:none;border:none;color:var(--text3);font-size:1.1rem;cursor:pointer;">✕</button>
+          </div>
+          <div style="padding:16px;">
+            <div style="display:flex;flex-direction:column;gap:12px;" id="rdp-form">
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Full Name</label>
+                <input class="form-input" id="rdp-fullname" type="text" style="font-size:0.85rem;">
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div>
+                  <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Ref Code</label>
+                  <input class="form-input" id="rdp-ref" type="text" style="font-size:0.85rem;">
+                </div>
+                <div>
+                  <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Phone</label>
+                  <input class="form-input" id="rdp-phone" type="tel" style="font-size:0.85rem;">
+                </div>
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Birthday</label>
+                <input class="form-input" id="rdp-birthday" type="date" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Address</label>
+                <input class="form-input" id="rdp-address" type="text" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Date Joined</label>
+                <input class="form-input" id="rdp-joined" type="date" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Notes</label>
+                <textarea class="form-input" id="rdp-notes" rows="2" style="font-size:0.85rem;resize:none;"></textarea>
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">New Password (leave blank to keep current)</label>
+                <input class="form-input" id="rdp-newpassword" type="text" placeholder="Enter new password..." style="font-size:0.85rem;">
+              </div>
+              <button class="btn btn-purple" onclick="saveRepDetails()" style="width:100%;">💾 Save Changes</button>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
+                <button class="btn btn-amber btn-sm" id="rdp-toggle-btn" onclick="toggleRepFromPanel()" style="font-size:0.75rem;">Deactivate</button>
+                <button class="btn btn-red btn-sm" onclick="deleteRepFromPanel()" style="font-size:0.75rem;">🗑 Delete</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2000,15 +2074,15 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title">Add Sales Rep</div>
-      <div class="modal-sub">Create a new sales rep account</div>
+      <div class="modal-sub">Rep will log in with Ref Code + default password</div>
     </div>
     <div class="form-grid">
       <div class="form-group full">
-        <label class="form-label">Full Name</label>
+        <label class="form-label">Full Name *</label>
         <input type="text" class="form-input" id="rep-fullname" placeholder="e.g. Chioma Okechukwu">
       </div>
       <div class="form-group">
-        <label class="form-label">Ref Code</label>
+        <label class="form-label">Ref Code * (used as username)</label>
         <input type="text" class="form-input" id="rep-refcode" placeholder="e.g. Chi">
       </div>
       <div class="form-group">
@@ -2016,17 +2090,48 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <input type="tel" class="form-input" id="rep-phone" placeholder="08012345678">
       </div>
       <div class="form-group">
-        <label class="form-label">Email Address</label>
-        <input type="email" class="form-input" id="rep-email" placeholder="rep@email.com">
+        <label class="form-label">Birthday</label>
+        <input type="date" class="form-input" id="rep-birthday">
       </div>
       <div class="form-group">
-        <label class="form-label">Password</label>
-        <input type="text" class="form-input" id="rep-password" placeholder="Set login password">
+        <label class="form-label">Address</label>
+        <input type="text" class="form-input" id="rep-address" placeholder="Home address">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date Joined</label>
+        <input type="date" class="form-input" id="rep-joined">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Password (default: LivingWell2026)</label>
+        <input type="text" class="form-input" id="rep-password" placeholder="LivingWell2026" value="LivingWell2026">
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-rep')">Cancel</button>
       <button class="btn btn-purple" onclick="saveRep()">Create Rep Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Create Modal -->
+<div class="modal-overlay" id="modal-bulk-reps">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">Bulk Create Reps</div>
+      <div class="modal-sub">Creates accounts for all 23 reps with default password LivingWell2026</div>
+    </div>
+    <div style="padding:0 4px 16px;">
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:14px;margin-bottom:16px;font-size:0.8rem;color:var(--text2);line-height:1.6;">
+        Each rep will log in with:<br>
+        <strong style="color:var(--text);">Username:</strong> Their ref code (e.g. Chi, Jane, Remi)<br>
+        <strong style="color:var(--text);">Password:</strong> LivingWell2026<br>
+        <span style="color:var(--text3);font-size:0.72rem;">They can change their password after first login</span>
+      </div>
+      <div id="bulk-create-status" style="font-size:0.8rem;color:var(--text2);max-height:280px;overflow-y:auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-reps')" id="bulk-cancel-btn">Cancel</button>
+      <button class="btn btn-purple" onclick="startBulkCreate()" id="bulk-start-btn">🚀 Create All Accounts</button>
     </div>
   </div>
 </div>
@@ -3599,44 +3704,234 @@ function closeReceiptViewer() {
 }
 
 // ── REPS ──
+// ── REPS PAGE STATE ──
+let allRepsData = [];
+let selectedRepId = null;
+
 async function loadReps() {
-  document.getElementById('reps-body').innerHTML = '<tr><td colspan="6" class="loading">Loading...</td></tr>';
+  const grid = document.getElementById('reps-list-grid');
+  if (grid) grid.innerHTML = '<div class="loading" style="grid-column:1/-1;">Loading...</div>';
   try {
-    const data = await api(`profiles?role=eq.rep&select=*&order=full_name`);
-    const tbody = document.getElementById('reps-body');
-    if (!data?.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);">No reps added yet. Click "Add Rep" to get started.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = data.map(r => `
-      <tr>
-        <td class="td-name">${r.full_name}</td>
-        <td><span class="badge badge-owner">${r.ref_code||'—'}</span></td>
-        <td class="td-mono">${r.phone||'—'}</td>
-        <td class="td-mono">—</td>
-        <td><span class="badge ${r.is_active?'badge-active':'badge-inactive'}">${r.is_active?'Active':'Inactive'}</span></td>
-        <td>
-          <div class="row-actions">
-            <button class="btn btn-ghost btn-sm" onclick="toggleRepStatus('${r.id}',${r.is_active})">${r.is_active?'Deactivate':'Activate'}</button>
-            <button class="btn btn-amber btn-sm" onclick="resetRepPassword('${r.id}','${r.full_name}')">Reset PW</button>
-            <button class="btn btn-red btn-sm" onclick="deleteRep('${r.id}','${r.full_name}')">Delete</button>
-          </div>
-        </td>
-      </tr>`).join('');
+    const data = await api(`profiles?role=eq.rep&select=*&order=full_name`) || [];
+    allRepsData = data;
+    const setEl = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+    setEl('rep-stat-active', data.filter(r => r.is_active).length);
+    setEl('rep-stat-inactive', data.filter(r => !r.is_active).length);
+    setEl('rep-stat-total', data.length);
+    renderRepsGrid(data);
   } catch(e) { showToast('Failed to load reps', 'error'); }
 }
 
-function openAddRepModal() { document.getElementById('modal-add-rep').classList.add('open'); }
+function renderRepsGrid(data) {
+  const grid = document.getElementById('reps-list-grid');
+  if (!grid) return;
+  if (!data.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text3);">No reps found.</div>';
+    return;
+  }
+  grid.innerHTML = data.map(r => `
+    <div onclick="openRepDetail('${r.id}')" style="background:var(--bg2);border:2px solid ${selectedRepId===r.id?'#7C3AED':'var(--card-border)'};border-radius:14px;padding:14px;cursor:pointer;transition:all 0.15s;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="background:var(--purple-dim);color:var(--purple-light);font-size:0.7rem;font-weight:700;padding:3px 8px;border-radius:6px;">${r.ref_code||'—'}</span>
+        <span style="width:8px;height:8px;border-radius:50%;background:${r.is_active?'var(--green)':'var(--text3)'};display:inline-block;"></span>
+      </div>
+      <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.full_name}</div>
+      <div style="font-size:0.72rem;color:var(--text3);">${r.phone||'No phone'}</div>
+      ${r.birthday ? `<div style="font-size:0.68rem;color:var(--purple-light);margin-top:4px;">🎂 ${new Date(r.birthday).toLocaleDateString('en-NG',{day:'2-digit',month:'short'})}</div>` : ''}
+    </div>`).join('');
+}
+
+function filterReps() {
+  const q = (document.getElementById('rep-search')?.value || '').toLowerCase();
+  const status = document.getElementById('rep-status-filter')?.value || 'all';
+  let filtered = allRepsData;
+  if (q) filtered = filtered.filter(r => r.full_name?.toLowerCase().includes(q) || r.ref_code?.toLowerCase().includes(q));
+  if (status === 'active') filtered = filtered.filter(r => r.is_active);
+  if (status === 'inactive') filtered = filtered.filter(r => !r.is_active);
+  renderRepsGrid(filtered);
+}
+
+function openRepDetail(id) {
+  const r = allRepsData.find(x => x.id === id);
+  if (!r) return;
+  selectedRepId = id;
+  renderRepsGrid(allRepsData);
+  document.getElementById('rdp-name').textContent = r.full_name;
+  document.getElementById('rdp-refcode').textContent = `@${r.ref_code||'—'}  ·  ${r.is_active ? '● Active' : '○ Inactive'}`;
+  document.getElementById('rdp-fullname').value = r.full_name || '';
+  document.getElementById('rdp-ref').value = r.ref_code || '';
+  document.getElementById('rdp-phone').value = r.phone || '';
+  document.getElementById('rdp-birthday').value = r.birthday || '';
+  document.getElementById('rdp-address').value = r.address || '';
+  document.getElementById('rdp-joined').value = r.date_joined || '';
+  document.getElementById('rdp-notes').value = r.notes || '';
+  document.getElementById('rdp-newpassword').value = '';
+  const toggleBtn = document.getElementById('rdp-toggle-btn');
+  if (toggleBtn) {
+    toggleBtn.textContent = r.is_active ? 'Deactivate' : '✓ Activate';
+    toggleBtn.className = r.is_active ? 'btn btn-amber btn-sm' : 'btn btn-green btn-sm';
+  }
+  document.getElementById('rep-detail-panel').style.display = 'block';
+}
+
+function closeRepDetail() {
+  selectedRepId = null;
+  document.getElementById('rep-detail-panel').style.display = 'none';
+  renderRepsGrid(allRepsData);
+}
+
+async function saveRepDetails() {
+  if (!selectedRepId) return;
+  const fullname = document.getElementById('rdp-fullname').value.trim();
+  const refcode = document.getElementById('rdp-ref').value.trim();
+  const phone = document.getElementById('rdp-phone').value.trim();
+  const birthday = document.getElementById('rdp-birthday').value;
+  const address = document.getElementById('rdp-address').value.trim();
+  const date_joined = document.getElementById('rdp-joined').value;
+  const notes = document.getElementById('rdp-notes').value.trim();
+  const newpassword = document.getElementById('rdp-newpassword').value.trim();
+  if (!fullname || !refcode) { showToast('Name and ref code are required', 'error'); return; }
+  try {
+    const patch = { full_name: fullname, ref_code: refcode, phone, address, notes };
+    if (birthday) patch.birthday = birthday;
+    if (date_joined) patch.date_joined = date_joined;
+    await api(`profiles?id=eq.${selectedRepId}`, 'PATCH', patch, { Prefer: 'return=minimal' });
+    if (newpassword) {
+      const pwRes = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ action: 'update_password', user_id: selectedRepId, password: newpassword })
+      });
+      const pwData = await pwRes.json();
+      if (pwData.error) showToast('Profile saved but password failed: ' + pwData.error, 'warning');
+      else showToast('Profile and password updated!', 'success');
+    } else { showToast('Profile saved!', 'success'); }
+    await loadReps();
+    openRepDetail(selectedRepId);
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+async function toggleRepFromPanel() {
+  if (!selectedRepId) return;
+  const rep = allRepsData.find(r => r.id === selectedRepId);
+  if (!rep) return;
+  await api(`profiles?id=eq.${selectedRepId}`, 'PATCH', { is_active: !rep.is_active }, { Prefer: 'return=minimal' });
+  showToast(`Rep ${rep.is_active ? 'deactivated' : 'activated'}`, 'success');
+  await loadReps();
+  openRepDetail(selectedRepId);
+}
+
+async function deleteRepFromPanel() {
+  if (!selectedRepId) return;
+  const rep = allRepsData.find(r => r.id === selectedRepId);
+  if (rep) deleteRep(rep.id, rep.full_name);
+}
+
+function openAddRepModal() {
+  const pw = document.getElementById('rep-password');
+  if (pw) pw.value = 'LivingWell2026';
+  document.getElementById('modal-add-rep').classList.add('open');
+}
+
+function openBulkCreateModal() {
+  document.getElementById('bulk-create-status').innerHTML = '';
+  document.getElementById('bulk-start-btn').disabled = false;
+  document.getElementById('bulk-start-btn').textContent = '🚀 Create All Accounts';
+  document.getElementById('bulk-cancel-btn').textContent = 'Cancel';
+  document.getElementById('modal-bulk-reps').classList.add('open');
+}
+
+const BULK_REPS = [
+  { full_name: 'Chioma Okechukwu', ref_code: 'Chi' },
+  { full_name: 'Olatunji Temitope J', ref_code: 'Jane' },
+  { full_name: 'Jane Adetoro Ifeoluwa', ref_code: 'Temi' },
+  { full_name: 'Temi Emmanuel Oluwasegun', ref_code: 'RHW' },
+  { full_name: 'Imoh Goodness Ijeoma', ref_code: 'Ijay' },
+  { full_name: 'Ijay Gospel Mono Dauda', ref_code: 'Gospel' },
+  { full_name: 'Gospel Omosehin Elizabeth', ref_code: 'Lizzy' },
+  { full_name: 'Omosehin Michael', ref_code: 'Michael' },
+  { full_name: 'Elizabeth Remilekun Abolad', ref_code: 'Remi' },
+  { full_name: 'Akinola Bolaji Faruq', ref_code: 'Bolaji' },
+  { full_name: 'Olatunji Esther Oluwaseun', ref_code: 'Debby' },
+  { full_name: 'Elegbede Rebecca Obapelumi', ref_code: 'Obapelumi' },
+  { full_name: 'Racheal Adejayan Folakemi', ref_code: 'Racheal' },
+  { full_name: 'Abdulshaheed Abdullahi Jalo', ref_code: 'Aaj' },
+  { full_name: 'Adhekegba Joseph', ref_code: 'Joe' },
+  { full_name: 'Ebhodaghe Esther', ref_code: 'Esther' },
+  { full_name: 'Ume Grace Amarachi', ref_code: 'Amarachi' },
+  { full_name: 'Tijani Harafat', ref_code: 'Arafat' },
+  { full_name: 'Ibeh Esther Mmesoma', ref_code: 'Mmesoma' },
+  { full_name: 'Favour James', ref_code: 'Favour' },
+  { full_name: 'Adeyinka', ref_code: 'Praise' },
+  { full_name: 'Chinyere Genesis', ref_code: 'Gen' },
+  { full_name: 'Olabode Olakehinde', ref_code: 'Kehinde' },
+];
+
+async function startBulkCreate() {
+  const btn = document.getElementById('bulk-start-btn');
+  const statusEl = document.getElementById('bulk-create-status');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  document.getElementById('bulk-cancel-btn').textContent = 'Close';
+  let created = 0, skipped = 0, failed = 0;
+  statusEl.innerHTML = `<div style="margin-bottom:10px;font-size:0.78rem;color:var(--text2);">Creating ${BULK_REPS.length} accounts...</div>`;
+
+  for (const rep of BULK_REPS) {
+    const email = `${rep.ref_code.toLowerCase()}@livingwell.com`;
+    const rowId = `br-${rep.ref_code}`;
+    statusEl.innerHTML += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.78rem;">
+      <span style="width:12px;height:12px;border-radius:50%;border:2px solid var(--text3);display:inline-block;flex-shrink:0;" id="${rowId}-dot"></span>
+      <span style="color:var(--text);font-weight:600;">${rep.full_name}</span>
+      <span style="color:var(--text3);font-size:0.7rem;">@${rep.ref_code}</span>
+      <span style="margin-left:auto;color:var(--text3);font-size:0.72rem;" id="${rowId}-st">...</span>
+    </div>`;
+    statusEl.scrollTop = statusEl.scrollHeight;
+    try {
+      const existing = await api(`profiles?ref_code=eq.${rep.ref_code}&select=id`) || [];
+      if (existing.length > 0) {
+        document.getElementById(`${rowId}-dot`).style.cssText = 'width:12px;height:12px;border-radius:50%;background:var(--amber);display:inline-block;flex-shrink:0;';
+        document.getElementById(`${rowId}-st`).textContent = 'Already exists';
+        document.getElementById(`${rowId}-st`).style.color = 'var(--amber)';
+        skipped++; continue;
+      }
+      const authRes = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ action: 'create', email, password: 'LivingWell2026' })
+      });
+      const authData = await authRes.json();
+      if (!authRes.ok || authData.error || !authData.id) throw new Error(authData.error || 'No ID returned');
+      await api(`profiles`, 'POST', { id: authData.id, full_name: rep.full_name, ref_code: rep.ref_code, role: 'rep', is_active: true }, { Prefer: 'return=minimal' });
+      document.getElementById(`${rowId}-dot`).style.cssText = 'width:12px;height:12px;border-radius:50%;background:var(--green);display:inline-block;flex-shrink:0;';
+      document.getElementById(`${rowId}-st`).textContent = '✓ Created';
+      document.getElementById(`${rowId}-st`).style.color = 'var(--green)';
+      created++;
+    } catch(e) {
+      document.getElementById(`${rowId}-dot`).style.cssText = 'width:12px;height:12px;border-radius:50%;background:var(--red);display:inline-block;flex-shrink:0;';
+      document.getElementById(`${rowId}-st`).textContent = '✗ ' + e.message;
+      document.getElementById(`${rowId}-st`).style.color = 'var(--red)';
+      failed++;
+    }
+  }
+  statusEl.innerHTML += `<div style="margin-top:14px;padding:12px;background:var(--bg2);border-radius:10px;font-size:0.8rem;font-weight:600;">
+    ✓ Created: <span style="color:var(--green);">${created}</span> &nbsp;·&nbsp;
+    Already existed: <span style="color:var(--amber);">${skipped}</span> &nbsp;·&nbsp;
+    Failed: <span style="color:var(--red);">${failed}</span>
+  </div>`;
+  btn.textContent = '✓ Done';
+  loadReps();
+}
 
 async function saveRep() {
   const fullname = document.getElementById('rep-fullname').value.trim();
   const refcode = document.getElementById('rep-refcode').value.trim();
   const phone = document.getElementById('rep-phone').value.trim();
-  const email = document.getElementById('rep-email').value.trim();
-  const password = document.getElementById('rep-password').value.trim();
-
-  if (!fullname || !email || !password) { showToast('Please fill all required fields', 'error'); return; }
-
+  const birthday = document.getElementById('rep-birthday').value;
+  const address = document.getElementById('rep-address').value.trim();
+  const date_joined = document.getElementById('rep-joined').value;
+  const password = document.getElementById('rep-password').value.trim() || 'LivingWell2026';
+  if (!fullname || !refcode) { showToast('Full name and ref code are required', 'error'); return; }
+  const email = `${refcode.toLowerCase()}@livingwell.com`;
   try {
     const authRes = await fetch(EDGE_FN, {
       method: 'POST',
@@ -3646,19 +3941,16 @@ async function saveRep() {
     let authData = {};
     try { authData = await authRes.json(); } catch(e) {}
     if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create user', 'error'); return; }
-    if (!authData.id) { showToast('Could not get new user ID from server', 'error'); return; }
-
-    await api(`profiles`, 'POST', { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true }, { Prefer: 'return=minimal' });
-
+    if (!authData.id) { showToast('Could not get new user ID', 'error'); return; }
+    const profileData = { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true };
+    if (birthday) profileData.birthday = birthday;
+    if (address) profileData.address = address;
+    if (date_joined) profileData.date_joined = date_joined;
+    await api(`profiles`, 'POST', profileData, { Prefer: 'return=minimal' });
     closeModal('modal-add-rep');
-    showToast(`Rep account created for ${fullname}!`, 'success');
-    document.getElementById('rep-fullname').value='';
-    document.getElementById('rep-refcode').value='';
-    document.getElementById('rep-phone').value='';
-    document.getElementById('rep-email').value='';
-    document.getElementById('rep-password').value='';
+    showToast(`✓ Account created! Login: ${refcode} / ${password}`, 'success');
     loadReps();
-  } catch(e) { showToast('Failed to create rep: ' + e.message, 'error'); }
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
 }
 
 async function toggleRepStatus(id, isActive) {
@@ -3755,6 +4047,7 @@ async function loadLogisticsPage() {
             ${l.user_id ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:4px 8px;" onclick="editLogisticsLogin('${l.id}','${l.name}','${l.user_id}')">Login</button>` : `<button class="btn btn-purple btn-sm" style="font-size:0.7rem;padding:4px 8px;" onclick="createLogisticsAccount('${l.id}','${l.name}')">+ Account</button>`}
             <button class="btn btn-amber btn-sm" style="font-size:0.7rem;padding:4px 8px;" onclick="sendStockToLogistics('${l.id}','${l.name}')">Stock</button>
             <button class="btn btn-blue btn-sm" style="font-size:0.7rem;padding:4px 8px;" onclick="viewPartnerStock('${l.id}','${l.name}')">View</button>
+            ${st.sent > 0 ? `<button class="btn btn-amber btn-sm" style="font-size:0.7rem;padding:4px 8px;background:linear-gradient(135deg,#dc2626,#ef4444);" onclick="clearPartnerStock('${l.id}','${l.name}')">Clear Stock</button>` : ''}
             <button class="btn btn-red btn-sm" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteLogisticsPartner('${l.id}','${l.name}','${l.user_id||''}')">✕</button>
           </div>
         </td>
@@ -3870,6 +4163,21 @@ function closePartnerStockPanel() {
   document.getElementById('partner-stock-panel').style.display = 'none';
   currentPartnerStockId = null;
   currentPartnerStockData = [];
+}
+
+async function clearPartnerStock(partnerId, partnerName) {
+  showConfirmDelete(
+    `Clear Stock — ${partnerName}`,
+    `This will wipe ALL stock records for ${partnerName} from both the admin and logistics portal. The logistics partner will see zero stock. This cannot be undone.`,
+    async () => {
+      try {
+        // Delete all logistics_stock records for this partner
+        await api(`logistics_stock?logistics_partner_id=eq.${partnerId}`, 'DELETE', null, { Prefer: 'return=minimal' });
+        showToast(`Stock cleared for ${partnerName}`, 'success');
+        loadLogistics();
+      } catch(e) { showToast('Failed to clear stock: ' + e.message, 'error'); }
+    }
+  );
 }
 
 async function loadStockAllocations(partners) {
