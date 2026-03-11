@@ -1427,12 +1427,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
                 <th>Location</th>
                 <th>Amount</th>
                 <th>Status</th>
-                <th>Assigned</th>
+                <th>Time</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="deliveries-body">
-              <tr><td colspan="8" class="loading">Loading deliveries...</td></tr>
+              <tr><td colspan="7" class="loading">Loading deliveries...</td></tr>
             </tbody>
           </table>
         </div>
@@ -3002,20 +3002,21 @@ async function loadDeliveries() {
 function renderDeliveries(deliveries) {
   const tbody = document.getElementById('deliveries-body');
   if (!deliveries.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3);">No deliveries found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3);">No deliveries found</td></tr>';
     return;
   }
   tbody.innerHTML = deliveries.map(d => {
+    const ts = d.assigned_at || d.created_at;
+    const timeOnly = ts ? new Date(ts).toLocaleTimeString('en-NG', { hour:'2-digit', minute:'2-digit', hour12:true }) + ', ' + new Date(ts).toLocaleDateString('en-NG', { day:'numeric', month:'short' }) : '—';
     return `
     <tr>
-      <td class="td-name">${d.orders?.customer_name||'—'}</td>
-      <td style="font-size:0.8rem;color:var(--text2);">${(d.orders?.products?.name||'—').substring(0,22)}</td>
-      <td style="font-weight:600;color:var(--purple-light);">${d.logistics_partners?.name||'—'}</td>
-      <td style="font-size:0.8rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
-      <td class="td-amount" style="color:var(--green);">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
+      <td class="td-name" style="font-size:0.8rem;">${d.orders?.customer_name||'—'}</td>
+      <td style="font-size:0.78rem;color:var(--text2);">${d.orders?.products?.name||'—'}</td>
+      <td style="font-size:0.78rem;font-weight:600;color:var(--purple-light);">${d.logistics_partners?.name||'—'}</td>
+      <td style="font-size:0.78rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
+      <td class="td-amount" style="color:var(--green);font-size:0.8rem;">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
       <td><span class="badge badge-${d.status}">${(d.status||'').replace(/_/g,' ')}</span></td>
-      <td class="td-mono" style="font-size:0.75rem;">${fmtDateTime(d.assigned_at || d.created_at)}</td>
-      <td class="td-mono" style="font-size:0.75rem;color:var(--green);">${fmtDateTime(d.delivered_at)}</td>
+      <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${timeOnly}</td>
     </tr>`;
   }).join('');
 }
