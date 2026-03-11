@@ -1010,21 +1010,21 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 /* ── RECEIPTS ── */
 .receipt-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
   padding: 4px 0;
 }
 .receipt-card {
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--card-border);
   background: var(--bg2);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
 }
-.receipt-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
-.receipt-card img { width: 100%; height: 110px; object-fit: cover; display: block; }
-.receipt-card-info { padding: 8px 10px; }
+.receipt-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(124,58,237,0.2); }
+.receipt-card img { width: 100%; height: 130px; object-fit: cover; display: block; }
+.receipt-card-info { padding: 10px 12px; }
 .receipt-card-name { font-size: 0.72rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
 .receipt-card-date { font-size: 0.65rem; color: var(--text3); }
 #receipt-lightbox {
@@ -1628,9 +1628,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
       <!-- Remittance Receipts -->
       <div class="card" style="margin-top:16px;">
-        <div class="card-header">
-          <div class="card-title">🧾 Remittance Receipts</div>
-          <div class="card-sub">Proof of cash handover uploaded by logistics partners</div>
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div class="card-title">🧾 Remittance Receipts</div>
+            <div class="card-sub">Proof of cash handover uploaded by logistics partners</div>
+          </div>
+          <button class="btn btn-purple" onclick="loadAllReceipts()" style="font-size:0.75rem;white-space:nowrap;">View All</button>
         </div>
         <div id="receipts-list">
           <div class="loading">Select a date above to load receipts...</div>
@@ -3417,29 +3420,86 @@ async function loadRemittanceReceipts(date) {
   if (!el) return;
   el.innerHTML = '<div class="loading">Loading receipts...</div>';
   try {
-    // Get all deliveries remitted on this date that have a receipt URL
-    const rows = await api(
-      `deliveries?remitted_at=gte.${date}T00:00:00&remitted_at=lte.${date}T23:59:59&remittance_receipt_url=not.is.null&select=remittance_receipt_url,remitted_at,logistics_partners(name)&order=remitted_at.desc`
+    const RECEIPT_SELECT = `remittance_receipt_url,remitted_at,updated_at,logistics_partner_id,amount_collected,logistics_partners(name),orders(customer_name,total_price,products(name))`;
+
+    // Try with remitted_at date filter first
+    let rows = await api(
+      `deliveries?remitted_at=gte.${date}T00:00:00&remitted_at=lte.${date}T23:59:59&remittance_receipt_url=not.is.null&select=${RECEIPT_SELECT}&order=remitted_at.desc`
     ) || [];
+
+    // Fallback: check updated_at
+    if (!rows.length) {
+      rows = await api(
+        `deliveries?remitted_to_admin=eq.true&updated_at=gte.${date}T00:00:00&updated_at=lte.${date}T23:59:59&remittance_receipt_url=not.is.null&select=${RECEIPT_SELECT}&order=updated_at.desc`
+      ) || [];
+    }
+
+    // Last resort: show ALL receipts ever uploaded
+    if (!rows.length) {
+      rows = await api(
+        `deliveries?remittance_receipt_url=not.is.null&select=${RECEIPT_SELECT}&order=updated_at.desc&limit=20`
+      ) || [];
+      if (rows.length) {
+        el.innerHTML = '<div style="padding:8px 4px 12px;font-size:0.72rem;color:var(--amber);font-weight:600;">⚠️ Showing all uploaded receipts (date filter returned no results)</div>';
+        el.innerHTML += renderReceiptGrid(rows);
+        return;
+      }
+    }
 
     if (!rows.length) {
       el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:0.85rem;">No receipts uploaded for this date.</div>';
       return;
     }
 
-    el.innerHTML = `<div class="receipt-grid">${rows.map(r => {
-      const name = r.logistics_partners?.name || 'Unknown';
-      const time = r.remitted_at ? new Date(r.remitted_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-      return `<div class="receipt-card" onclick="openReceiptLightbox('${r.remittance_receipt_url}','${name} · ${time}')">
-        <img src="${r.remittance_receipt_url}" alt="Receipt from ${name}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'110\'><rect fill=\'%23111\' width=\'160\' height=\'110\'></rect><text x=\'50%\' y=\'50%\' fill=\'%23555\' text-anchor=\'middle\' dy=\'.3em\' font-size=\'11\'>No preview</text></svg>'">
-        <div class="receipt-card-info">
-          <div class="receipt-card-name">${name}</div>
-          <div class="receipt-card-date">${time}</div>
+    el.innerHTML += renderReceiptGrid(rows);
+  } catch(e) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);">Could not load receipts. Check console for details.</div>';
+    console.error('Receipt load error:', e);
+  }
+}
+
+function renderReceiptGrid(rows) {
+  return `<div class="receipt-grid">${rows.map(r => {
+    const partner = r.logistics_partners?.name || 'Unknown Partner';
+    const product = r.orders?.products?.name || '—';
+    const customer = r.orders?.customer_name || '—';
+    const amount = r.amount_collected || r.orders?.total_price || 0;
+    const ts = r.remitted_at || r.updated_at;
+    const date = ts ? new Date(ts).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true }) : '—';
+    const url = r.remittance_receipt_url;
+    const label = `${partner} · ${product} · ₦${parseFloat(amount||0).toLocaleString()} · ${date}`;
+    return `<div class="receipt-card" onclick="openReceiptLightbox('${url}','${label}')">
+      <img src="${url}" alt="Receipt" loading="lazy"
+        onerror="this.parentElement.querySelector('.receipt-card-info').insertAdjacentHTML('beforebegin','<div style=\'height:110px;display:flex;align-items:center;justify-content:center;background:var(--bg3);font-size:0.75rem;color:var(--text3);\'>📄 No preview</div>');this.remove()">
+      <div class="receipt-card-info">
+        <div class="receipt-card-name" style="color:var(--purple-light);">🚚 ${partner}</div>
+        <div style="font-size:0.7rem;color:var(--text);font-weight:600;margin:3px 0;">📦 ${product}</div>
+        <div style="font-size:0.7rem;color:var(--text2);">👤 ${customer}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;">
+          <span style="font-size:0.72rem;font-weight:700;color:var(--green);">₦${parseFloat(amount||0).toLocaleString()}</span>
+          <span style="font-size:0.62rem;color:var(--text3);">${date}</span>
         </div>
-      </div>`;
-    }).join('')}</div>`;
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+async function loadAllReceipts() {
+  const el = document.getElementById('receipts-list');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">Loading all receipts...</div>';
+  try {
+    const rows = await api(
+      `deliveries?remittance_receipt_url=not.is.null&select=remittance_receipt_url,remitted_at,updated_at,logistics_partner_id,amount_collected,logistics_partners(name),orders(customer_name,total_price,products(name))&order=updated_at.desc&limit=50`
+    ) || [];
+    if (!rows.length) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);">No receipts found.</div>';
+      return;
+    }
+    el.innerHTML = `<div style="padding:4px 0 10px;font-size:0.72rem;color:var(--text3);">Showing last ${rows.length} receipts across all dates</div>` + renderReceiptGrid(rows);
   } catch(e) {
     el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);">Could not load receipts.</div>';
+    console.error(e);
   }
 }
 
