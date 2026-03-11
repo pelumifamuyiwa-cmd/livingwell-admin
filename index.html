@@ -3800,7 +3800,7 @@ async function saveRepDetails() {
       const pwRes = await fetch(EDGE_FN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
-        body: JSON.stringify({ action: 'update_password', user_id: selectedRepId, password: newpassword })
+        body: JSON.stringify({ action: 'reset_password', user_id: selectedRepId, password: newpassword })
       });
       const pwData = await pwRes.json();
       if (pwData.error) showToast('Profile saved but password failed: ' + pwData.error, 'warning');
