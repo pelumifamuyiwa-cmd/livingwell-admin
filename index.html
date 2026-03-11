@@ -3243,14 +3243,19 @@ async function cleanOldReceipts() {
       .map(d => {
         const url = d.remittance_receipt_url;
         if (!url) return null;
-        const parts = url.split('/remittance-receipts/');
+        const parts = url.split('/remittance%20receipt/').length > 1
+          ? url.split('/remittance%20receipt/')
+          : url.split('/remittance receipt/').length > 1
+          ? url.split('/remittance receipt/')
+          : url.split('/remittance-receipts/');
         return parts[1] || null;
       })
       .filter(Boolean);
 
     if (fileNames.length) {
       const tok = localStorage.getItem('lw_token') || SUPABASE_KEY;
-      await fetch(`${SUPABASE_URL}/storage/v1/object/remittance-receipts`, {
+      const bucketName = encodeURIComponent('remittance receipt');
+      await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${tok}`,
