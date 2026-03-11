@@ -2914,6 +2914,12 @@ async function submitRecordPayment() {
 // ── ASSIGN LOGISTICS ──
 let pendingWhatsAppUrl = null; // stores WA url set during modal interaction
 
+function openAssignModalById(orderId) {
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  openAssignModal(orderId, o.customer_name || '—', o.products?.name || '—', o.delivery_location || '—', o.total_price || 0);
+}
+
 function openAssignModal(orderId, customerName, productName, location, amount) {
   currentAssignOrderId = orderId;
   pendingWhatsAppUrl = null;
@@ -2934,7 +2940,7 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
       pendingWhatsAppUrl = null;
       return;
     }
-    const msg = `Hello ${lname},\n\nNew delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease confirm receipt. Thank you!`;
+    const msg = `Hello ${lname},\n\nYou have a new delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease open your portal to accept and manage this delivery:\nhttps://livingwell-logistics.vercel.app\n\nThank you!`;
     document.getElementById('whatsapp-msg-preview').textContent = msg;
     document.getElementById('whatsapp-preview').style.display = 'block';
     const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
