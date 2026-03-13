@@ -1973,23 +1973,36 @@ tr:hover td { background: rgba(255,255,255,0.02); }
             <div class="card-title">📋 Full Rep Activity Table</div>
             <div class="card-sub">Order intake, delivery completion and revenue per rep</div>
           </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+            <span style="font-size:0.72rem;color:var(--text3);">Sort by:</span>
+            <select id="perf-sort" onchange="sortPerfTable()" style="font-size:0.75rem;padding:4px 10px;background:var(--bg3);border:1px solid var(--card-border);color:var(--text);border-radius:6px;cursor:pointer;">
+              <option value="completionRate">Completion Rate</option>
+              <option value="total">Most Orders</option>
+              <option value="value_ordered">Highest Value Ordered</option>
+              <option value="value">Highest Revenue Delivered</option>
+              <option value="cancelled">Most Cancellations</option>
+              <option value="cancellationRate">Cancellation Rate</option>
+            </select>
+          </div>
           <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
             <thead>
               <tr style="border-bottom:1px solid var(--card-border);">
-                <th style="padding:10px 16px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">#</th>
-                <th style="padding:10px 16px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Rep</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Orders</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Delivered</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Awaiting Pay</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Pending</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Cancelled</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Completion %</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Revenue</th>
-                <th style="padding:10px 16px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Status</th>
+                <th style="padding:10px 12px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">#</th>
+                <th style="padding:10px 12px;text-align:left;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Rep</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Orders</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Delivered</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Awaiting</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Pending</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Cancelled</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Completion %</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Cancel %</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Value Ordered</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Revenue Delivered</th>
+                <th style="padding:10px 12px;text-align:center;color:var(--text3);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Status</th>
               </tr>
             </thead>
             <tbody id="perf-detail-body">
-              <tr><td colspan="10" class="loading">Loading...</td></tr>
+              <tr><td colspan="12" class="loading">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -4028,6 +4041,7 @@ async function loadLogisticsPage() {
       <tr>
         <td>
           <div style="font-weight:700;font-size:0.85rem;color:var(--white);">${l.name}</div>
+          ${l.email ? '<div style="font-size:0.68rem;color:var(--text3);margin-top:2px;">📧 ' + l.email + '</div>' : ''}
           ${l.user_id ? '' : '<div style="font-size:0.68rem;color:var(--amber);margin-top:2px;">No account</div>'}
         </td>
         <td class="td-mono" style="font-size:0.8rem;">${l.phone||'—'}</td>
@@ -4435,13 +4449,14 @@ async function loadPerformance() {
 
     const repStats = {};
     (reps||[]).forEach(r => {
-      repStats[r.id] = { ...r, total: 0, delivered_paid: 0, delivered_awaiting: 0, pending: 0, cancelled: 0, assigned: 0, value: 0 };
+      repStats[r.id] = { ...r, total: 0, delivered_paid: 0, delivered_awaiting: 0, pending: 0, cancelled: 0, assigned: 0, value: 0, value_ordered: 0 };
     });
 
     (orders||[]).forEach(o => {
       if (!repStats[o.rep_id]) return;
       const s = repStats[o.rep_id];
       s.total++;
+      s.value_ordered += parseFloat(o.total_price||0);
       if (o.status === 'delivered_payment_made') { s.delivered_paid++; s.value += parseFloat(o.total_price||0); }
       else if (o.status === 'delivered_awaiting_payment') { s.delivered_awaiting++; s.value += parseFloat(o.total_price||0); }
       else if (o.status === 'cancelled') s.cancelled++;
@@ -4454,7 +4469,8 @@ async function loadPerformance() {
       .map(r => {
         const completed = r.delivered_paid + r.delivered_awaiting;
         const completionRate = r.total > 0 ? Math.round((completed / r.total) * 100) : 0;
-        return { ...r, completed, completionRate };
+        const cancellationRate = r.total > 0 ? Math.round((r.cancelled / r.total) * 100) : 0;
+        return { ...r, completed, completionRate, cancellationRate };
       })
       .sort((a, b) => b.completionRate - a.completionRate || b.total - a.total);
 
@@ -4495,46 +4511,64 @@ async function loadPerformance() {
             <span style="font-size:0.7rem;font-weight:700;color:${rateColor};">${r.completionRate}%</span>
           </div>
         </div>
-        <div style="display:flex;gap:16px;text-align:center;flex-shrink:0;">
+        <div style="display:flex;gap:12px;text-align:center;flex-shrink:0;">
           <div><div class="leader-count">${r.total}</div><div class="leader-sub">orders</div></div>
           <div><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">delivered</div></div>
           <div><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancelled</div></div>
-          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">revenue</div></div>
+          <div><div class="leader-count" style="color:var(--purple-light);font-size:0.78rem;">₦${(r.value_ordered/1000).toFixed(0)}k</div><div class="leader-sub">val. ordered</div></div>
+          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">val. delivered</div></div>
         </div>
         <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="margin-left:12px;">${r.is_active?'Active':'Inactive'}</span>
       </div>`;
     }).join('');
 
-    // Detail table
+    // Store sorted data globally for re-sorting
+    window._perfSortedData = sorted;
+    renderPerfDetailTable(sorted);
+  } catch(e) { showToast('Failed to load performance: ' + e.message, 'error'); }
+}
+
+function renderPerfDetailTable(data) {
     const tbody = document.getElementById('perf-detail-body');
-    if (tbody) tbody.innerHTML = sorted.map((r, i) => {
+    if (!tbody) return;
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text3);">No data</td></tr>'; return; }
+    tbody.innerHTML = data.map((r, i) => {
       const rateColor = r.completionRate >= 75 ? 'var(--green)' : r.completionRate >= 50 ? 'var(--amber)' : 'var(--red)';
+      const cancelColor = r.cancellationRate >= 30 ? 'var(--red)' : r.cancellationRate >= 15 ? 'var(--amber)' : 'var(--text3)';
       return `<tr style="border-bottom:1px solid var(--card-border);">
-        <td style="padding:10px 16px;color:var(--text3);">${i+1}</td>
-        <td style="padding:10px 16px;">
+        <td style="padding:10px 12px;color:var(--text3);">${i+1}</td>
+        <td style="padding:10px 12px;">
           <div style="font-weight:600;color:var(--white);font-size:0.85rem;">${r.full_name}</div>
           <div style="font-size:0.7rem;color:var(--text3);">${r.ref_code||'—'} · ${r.phone||''}</div>
         </td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--purple-light);">${r.total}</td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);">${r.delivered_paid}</td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--amber);">${r.delivered_awaiting}</td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--text3);">${r.pending + r.assigned}</td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--red);">${r.cancelled}</td>
-        <td style="padding:10px 16px;text-align:center;">
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--purple-light);">${r.total}</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);">${r.delivered_paid}</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--amber);">${r.delivered_awaiting}</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--text3);">${r.pending + r.assigned}</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--red);">${r.cancelled}</td>
+        <td style="padding:10px 12px;text-align:center;">
           <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
-            <div style="width:50px;height:6px;background:var(--card-border);border-radius:99px;">
+            <div style="width:44px;height:6px;background:var(--card-border);border-radius:99px;">
               <div style="width:${r.completionRate}%;height:100%;background:${rateColor};border-radius:99px;"></div>
             </div>
             <span style="font-weight:700;color:${rateColor};font-size:0.8rem;">${r.completionRate}%</span>
           </div>
         </td>
-        <td style="padding:10px 16px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--green);font-size:0.8rem;">₦${r.value.toLocaleString()}</td>
-        <td style="padding:10px 16px;text-align:center;"><span class="badge ${r.is_active?'badge-active':'badge-inactive'}">${r.is_active?'Active':'Inactive'}</span></td>
+        <td style="padding:10px 12px;text-align:center;font-weight:700;color:${cancelColor};font-size:0.8rem;">${r.cancellationRate}%</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--purple-light);font-size:0.8rem;">₦${r.value_ordered.toLocaleString()}</td>
+        <td style="padding:10px 12px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--green);font-size:0.8rem;">₦${r.value.toLocaleString()}</td>
+        <td style="padding:10px 12px;text-align:center;"><span class="badge ${r.is_active?'badge-active':'badge-inactive'}">${r.is_active?'Active':'Inactive'}</span></td>
       </tr>`;
     }).join('');
-
-  } catch(e) { showToast('Failed to load performance', 'error'); }
 }
+
+function sortPerfTable() {
+  const key = document.getElementById('perf-sort')?.value || 'completionRate';
+  const data = (window._perfSortedData || []).slice().sort((a,b) => b[key] - a[key]);
+  renderPerfDetailTable(data);
+}
+
+
 
 // ── PRODUCTS ──
 async function loadProducts() {
