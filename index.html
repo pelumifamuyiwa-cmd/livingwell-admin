@@ -4023,20 +4023,22 @@ async function loadLogisticsPage() {
     const tbody = document.getElementById('logistics-body');
     if (!data?.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);">No logistics partners found</td></tr>'; return; }
     // Load stock totals per partner
-    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,confirmed`);
+    const allStock = await api(`logistics_stock?select=logistics_partner_id,quantity_sent,quantity_confirmed,quantity_remaining,confirmed`);
     const stockMap = {};
     (allStock||[]).forEach(s => {
-      if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0, remaining:0 };
+      if (!stockMap[s.logistics_partner_id]) stockMap[s.logistics_partner_id] = { sent:0, confirmed:0, remaining:0, unconfirmedQty:0 };
       stockMap[s.logistics_partner_id].sent += s.quantity_sent||0;
       if (s.confirmed) {
         stockMap[s.logistics_partner_id].confirmed += s.quantity_confirmed||0;
         stockMap[s.logistics_partner_id].remaining += s.quantity_remaining||0;
+      } else {
+        stockMap[s.logistics_partner_id].unconfirmedQty += s.quantity_sent||0;
       }
     });
 
     tbody.innerHTML = data.map(l => {
       const st = stockMap[l.id] || { sent:0, confirmed:0, remaining:0 };
-      const pendingConfirm = st.sent - st.confirmed;
+      const pendingConfirm = st.unconfirmedQty||0;
       return `
       <tr>
         <td>
