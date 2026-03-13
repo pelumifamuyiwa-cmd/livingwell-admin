@@ -3864,10 +3864,33 @@ async function saveRepDetails() {
   const newpassword = document.getElementById('rdp-newpassword').value.trim();
   if (!fullname || !refcode) { showToast('Name and ref code are required', 'error'); return; }
   try {
+    // Check if ref code changed — if so, update Auth email too
+    const currentRep = allRepsData.find(r => r.id === selectedRepId);
+    const oldRefCode = currentRep?.ref_code || '';
+    const newEmail = `${refcode.toLowerCase()}@livingwell.com`;
+    const refChanged = oldRefCode.toLowerCase() !== refcode.toLowerCase();
+
+    // 1. Update profile table
     const patch = { full_name: fullname, ref_code: refcode, phone, address, notes };
     if (birthday) patch.birthday = birthday;
     if (date_joined) patch.date_joined = date_joined;
     await api(`profiles?id=eq.${selectedRepId}`, 'PATCH', patch, { Prefer: 'return=minimal' });
+
+    // 2. If ref code changed, update Auth email via Edge Function
+    if (refChanged) {
+      const emailRes = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ action: 'reset_password', user_id: selectedRepId, email: newEmail })
+      });
+      const emailData = await emailRes.json();
+      if (emailData.error) {
+        showToast(`Profile saved but login email update failed: ${emailData.error}`, 'warning');
+        await loadReps(); openRepDetail(selectedRepId); return;
+      }
+    }
+
+    // 3. If password also changing, update that too
     if (newpassword) {
       const pwRes = await fetch(EDGE_FN, {
         method: 'POST',
@@ -3875,9 +3898,15 @@ async function saveRepDetails() {
         body: JSON.stringify({ action: 'reset_password', user_id: selectedRepId, password: newpassword })
       });
       const pwData = await pwRes.json();
-      if (pwData.error) showToast('Profile saved but password failed: ' + pwData.error, 'warning');
-      else showToast('Profile and password updated!', 'success');
-    } else { showToast('Profile saved!', 'success'); }
+      if (pwData.error) {
+        showToast('Profile saved but password update failed: ' + pwData.error, 'warning');
+        await loadReps(); openRepDetail(selectedRepId); return;
+      }
+      showToast(`✓ Saved! Login: ${newEmail} / ${newpassword}`, 'success');
+    } else {
+      showToast(refChanged ? `✓ Saved! New login: ${newEmail}` : '✓ Profile saved!', 'success');
+    }
+
     await loadReps();
     openRepDetail(selectedRepId);
   } catch(e) { showToast('Failed: ' + e.message, 'error'); }
