@@ -4005,22 +4005,34 @@ async function saveRep() {
   if (!fullname || !refcode) { showToast('Full name and ref code are required', 'error'); return; }
   const email = `${refcode.toLowerCase()}@livingwell.com`;
   try {
-    const authRes = await fetch(EDGE_FN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
-      body: JSON.stringify({ action: 'create', email, password })
-    });
-    let authData = {};
-    try { authData = await authRes.json(); } catch(e) {}
-    if (!authRes.ok || authData.error) { showToast(authData.error || 'Failed to create user', 'error'); return; }
-    if (!authData.id) { showToast('Could not get new user ID', 'error'); return; }
+    let authRes, authData = {}, rawText = '';
+    try {
+      authRes = await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ action: 'create', email, password })
+      });
+      rawText = await authRes.text();
+      try { authData = JSON.parse(rawText); } catch(e) {}
+    } catch(netErr) {
+      showToast('Network error — check your connection: ' + netErr.message, 'error');
+      return;
+    }
+    if (!authRes.ok || authData.error) {
+      showToast(authData.error || authData.message || ('HTTP ' + authRes.status + ': ' + rawText.slice(0,120)), 'error');
+      return;
+    }
+    if (!authData.id) {
+      showToast('No user ID returned. Edge Function may be sleeping — try again in 10 seconds.', 'error');
+      return;
+    }
     const profileData = { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true };
     if (birthday) profileData.birthday = birthday;
     if (address) profileData.address = address;
     if (date_joined) profileData.date_joined = date_joined;
     await api(`profiles`, 'POST', profileData, { Prefer: 'return=minimal' });
     closeModal('modal-add-rep');
-    showToast(`✓ Account created! Login: ${refcode} / ${password}`, 'success');
+    showToast(`✓ Account created! Login: ${email} / ${password}`, 'success');
     loadReps();
   } catch(e) { showToast('Failed: ' + e.message, 'error'); }
 }
