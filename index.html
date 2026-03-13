@@ -1851,10 +1851,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
           <div class="page-title">Logistics Partners</div>
           <div class="page-sub">Manage delivery partners</div>
         </div>
-        <button class="btn btn-purple" onclick="openAddLogisticsModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Partner
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-purple" onclick="openBulkStockModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            Bulk Send Stock
+          </button>
+          <button class="btn" style="background:var(--red);color:#fff;" onclick="clearAllStock()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            Clear All Stock
+          </button>
+          <button class="btn btn-purple" onclick="openAddLogisticsModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Partner
+          </button>
+        </div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -2298,6 +2308,28 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-send-stock')">Cancel</button>
       <button class="btn btn-purple" onclick="confirmSendStock()">Send Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Stock Modal -->
+<div class="modal-overlay" id="modal-bulk-stock">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">Bulk Send Stock</div>
+      <div class="modal-sub">Add multiple products and send to selected logistics partners</div>
+    </div>
+    <!-- Product lines -->
+    <div id="bulk-stock-lines" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+    <button onclick="addBulkStockLine()" style="width:100%;padding:8px;background:var(--bg3);border:1px dashed var(--card-border);color:var(--text3);border-radius:8px;cursor:pointer;font-size:0.78rem;margin-bottom:16px;">+ Add Another Product</button>
+    <!-- Partner selection -->
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="form-label">Send To (select one or more logistics partners)</label>
+      <div id="bulk-partner-checkboxes" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding:8px;background:var(--bg3);border-radius:8px;border:1px solid var(--card-border);"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-stock')">Cancel</button>
+      <button class="btn btn-purple" onclick="confirmBulkStock()">Send Stock</button>
     </div>
   </div>
 </div>
@@ -4190,7 +4222,7 @@ async function clearPartnerStock(partnerId, partnerName) {
         // Delete all logistics_stock records for this partner
         await api(`logistics_stock?logistics_partner_id=eq.${partnerId}`, 'DELETE', null, { Prefer: 'return=minimal' });
         showToast(`Stock cleared for ${partnerName}`, 'success');
-        loadLogistics();
+        loadLogisticsPage();
       } catch(e) { showToast('Failed to clear stock: ' + e.message, 'error'); }
     }
   );
@@ -4296,6 +4328,120 @@ async function saveLogisticsLogin() {
     showToast(`Login updated for ${name}!`, 'success');
     loadLogisticsPage();
   } catch(e) { showToast('Failed to update login: ' + e.message, 'error'); }
+}
+
+
+// ── BULK STOCK SEND ──
+async function openBulkStockModal() {
+  const prods = await api(`products?is_active=eq.true&select=*,stock(quantity)&order=name`);
+  const partners = await api(`logistics_partners?is_active=eq.true&select=id,name&order=name`);
+  if (!prods?.length) { showToast('No products found', 'error'); return; }
+  if (!partners?.length) { showToast('No logistics partners found', 'error'); return; }
+
+  // Store globally for use in line rendering
+  window._bulkProds = prods;
+  window._bulkPartners = partners;
+
+  // Build partner checkboxes
+  document.getElementById('bulk-partner-checkboxes').innerHTML = partners.map(p => `
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;color:var(--text);">
+      <input type="checkbox" value="${p.id}" data-name="${p.name}" style="width:15px;height:15px;accent-color:var(--purple);cursor:pointer;">
+      ${p.name}
+    </label>`).join('');
+
+  // Start with one product line
+  document.getElementById('bulk-stock-lines').innerHTML = '';
+  addBulkStockLine();
+
+  document.getElementById('modal-bulk-stock').classList.add('open');
+}
+
+function addBulkStockLine() {
+  const prods = window._bulkProds || [];
+  const idx = document.getElementById('bulk-stock-lines').children.length;
+  const div = document.createElement('div');
+  div.style = 'display:flex;gap:8px;align-items:center;';
+  div.innerHTML = `
+    <select class="form-input bulk-prod-sel" style="flex:2;font-size:0.8rem;padding:8px 10px;" data-idx="${idx}">
+      <option value="">Select product...</option>
+      ${prods.map(p => `<option value="${p.id}" data-stock="${p.stock?.[0]?.quantity||0}">${p.name} (${p.stock?.[0]?.quantity||0} in stock)</option>`).join('')}
+    </select>
+    <input type="number" class="form-input bulk-qty-inp" placeholder="Qty" min="1" style="flex:1;font-size:0.8rem;padding:8px 10px;">
+    ${idx > 0 ? `<button onclick="this.parentElement.remove()" style="background:var(--red-bg);border:none;color:var(--red);border-radius:8px;width:32px;height:36px;cursor:pointer;font-size:1rem;flex-shrink:0;">×</button>` : '<div style="width:32px;"></div>'}
+  `;
+  document.getElementById('bulk-stock-lines').appendChild(div);
+}
+
+async function confirmBulkStock() {
+  const lines = document.querySelectorAll('#bulk-stock-lines > div');
+  const partnerChecks = document.querySelectorAll('#bulk-partner-checkboxes input:checked');
+
+  if (!partnerChecks.length) { showToast('Select at least one logistics partner', 'error'); return; }
+
+  const items = [];
+  let valid = true;
+  lines.forEach(line => {
+    const sel = line.querySelector('.bulk-prod-sel');
+    const inp = line.querySelector('.bulk-qty-inp');
+    const pid = sel?.value;
+    const qty = parseInt(inp?.value)||0;
+    const productName = sel?.options[sel.selectedIndex]?.text?.split(' (')[0] || '';
+    const availStock = parseInt(sel?.options[sel.selectedIndex]?.dataset.stock||0);
+    if (!pid || qty < 1) { valid = false; return; }
+    if (qty > availStock) { showToast(`Not enough stock for ${productName} (only ${availStock} available)`, 'error'); valid = false; return; }
+    items.push({ pid, qty, productName, availStock });
+  });
+
+  if (!valid) return;
+  if (!items.length) { showToast('Add at least one product line', 'error'); return; }
+
+  const partners = Array.from(partnerChecks).map(c => ({ id: c.value, name: c.dataset.name }));
+  const btn = document.querySelector('#modal-bulk-stock .btn-purple');
+  btn.disabled = true; btn.textContent = 'Sending...';
+
+  try {
+    for (const partner of partners) {
+      for (const item of items) {
+        // Insert logistics_stock row
+        await api(`logistics_stock`, 'POST', {
+          logistics_partner_id: partner.id,
+          product_id: item.pid,
+          quantity_sent: item.qty,
+          quantity_confirmed: 0,
+          quantity_remaining: item.qty,
+          confirmed: false,
+          sent_at: new Date().toISOString()
+        }, { Prefer: 'return=minimal' });
+        // Deduct from main stock
+        const mainStock = await api(`stock?product_id=eq.${item.pid}&select=*`);
+        if (mainStock?.length) {
+          const newQty = Math.max(0, (mainStock[0].quantity||0) - item.qty);
+          await api(`stock?product_id=eq.${item.pid}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
+        }
+      }
+    }
+    closeModal('modal-bulk-stock');
+    const summary = items.map(i => `${i.qty}x ${i.productName}`).join(', ');
+    showToast(`Stock sent to ${partners.length} partner${partners.length>1?'s':''}: ${summary}`, 'success');
+    loadLogisticsPage();
+    loadStock();
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Send Stock'; }
+}
+
+// ── CLEAR ALL STOCK ──
+async function clearAllStock() {
+  showConfirmDelete(
+    'Clear ALL Stock',
+    'This will wipe ALL stock records for ALL logistics partners. Every partner will show zero stock. This cannot be undone.',
+    async () => {
+      try {
+        await api(`logistics_stock?id=neq.00000000-0000-0000-0000-000000000000`, 'DELETE', null, { Prefer: 'return=minimal' });
+        showToast('All stock cleared for all partners', 'success');
+        loadLogisticsPage();
+      } catch(e) { showToast('Failed to clear all stock: ' + e.message, 'error'); }
+    }
+  );
 }
 
 async function sendStockToLogistics(partnerId, partnerName) {
