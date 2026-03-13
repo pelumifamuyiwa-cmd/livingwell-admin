@@ -4378,6 +4378,9 @@ async function confirmBulkStock() {
 
   if (!partnerChecks.length) { showToast('Select at least one logistics partner', 'error'); return; }
 
+  const partners = Array.from(partnerChecks).map(c => ({ id: c.value, name: c.dataset.name }));
+  const numPartners = partners.length;
+
   const items = [];
   let valid = true;
   lines.forEach(line => {
@@ -4387,22 +4390,24 @@ async function confirmBulkStock() {
     const qty = parseInt(inp?.value)||0;
     const productName = sel?.options[sel.selectedIndex]?.text?.split(' (')[0] || '';
     const availStock = parseInt(sel?.options[sel.selectedIndex]?.dataset.stock||0);
-    if (!pid || qty < 1) { valid = false; return; }
-    if (qty > availStock) { showToast(`Not enough stock for ${productName} (only ${availStock} available)`, 'error'); valid = false; return; }
+    if (!pid || qty < 1) { valid = false; showToast('Fill in all product lines', 'error'); return; }
+    const totalNeeded = qty * numPartners;
+    if (totalNeeded > availStock) {
+      showToast(`Not enough stock for ${productName} — need ${totalNeeded} (${qty}×${numPartners} partners) but only ${availStock} available`, 'error');
+      valid = false; return;
+    }
     items.push({ pid, qty, productName, availStock });
   });
 
   if (!valid) return;
   if (!items.length) { showToast('Add at least one product line', 'error'); return; }
-
-  const partners = Array.from(partnerChecks).map(c => ({ id: c.value, name: c.dataset.name }));
   const btn = document.querySelector('#modal-bulk-stock .btn-purple');
   btn.disabled = true; btn.textContent = 'Sending...';
 
   try {
+    // Insert logistics_stock rows for each partner + product
     for (const partner of partners) {
       for (const item of items) {
-        // Insert logistics_stock row
         await api(`logistics_stock`, 'POST', {
           logistics_partner_id: partner.id,
           product_id: item.pid,
@@ -4412,12 +4417,15 @@ async function confirmBulkStock() {
           confirmed: false,
           sent_at: new Date().toISOString()
         }, { Prefer: 'return=minimal' });
-        // Deduct from main stock
-        const mainStock = await api(`stock?product_id=eq.${item.pid}&select=*`);
-        if (mainStock?.length) {
-          const newQty = Math.max(0, (mainStock[0].quantity||0) - item.qty);
-          await api(`stock?product_id=eq.${item.pid}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
-        }
+      }
+    }
+    // Deduct from main stock once per product (total = qty * number of partners)
+    for (const item of items) {
+      const mainStock = await api(`stock?product_id=eq.${item.pid}&select=*`);
+      if (mainStock?.length) {
+        const totalDeduct = item.qty * partners.length;
+        const newQty = Math.max(0, (mainStock[0].quantity||0) - totalDeduct);
+        await api(`stock?product_id=eq.${item.pid}`, 'PATCH', { quantity: newQty }, { Prefer: 'return=minimal' });
       }
     }
     closeModal('modal-bulk-stock');
