@@ -1042,6 +1042,28 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 #receipt-lightbox-label { font-size: 0.8rem; color: rgba(255,255,255,0.6); }
 
+/* ── REPS PAGE MOBILE ── */
+@media (max-width: 768px) {
+  .reps-layout-grid {
+    grid-template-columns: 1fr !important;
+  }
+  #rep-detail-panel {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    z-index: 300 !important;
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.5) !important;
+  }
+  #rep-detail-panel.active-panel {
+    display: block !important;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -1766,7 +1788,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start;">
+      <div style="display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start;" class="reps-layout-grid">
         <!-- Rep list -->
         <div class="card">
           <div class="card-header">
@@ -1783,7 +1805,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
               </select>
             </div>
           </div>
-          <div id="reps-list-grid" style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+          <div id="reps-list-grid" style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">
             <div class="loading" style="grid-column:1/-1;">Loading reps...</div>
           </div>
         </div>
@@ -3816,12 +3838,17 @@ function openRepDetail(id) {
     toggleBtn.textContent = r.is_active ? 'Deactivate' : '✓ Activate';
     toggleBtn.className = r.is_active ? 'btn btn-amber btn-sm' : 'btn btn-green btn-sm';
   }
-  document.getElementById('rep-detail-panel').style.display = 'block';
+  const panel = document.getElementById('rep-detail-panel');
+  panel.style.display = 'block';
+  panel.classList.add('active-panel');
+  if (window.innerWidth <= 768) panel.scrollTop = 0;
 }
 
 function closeRepDetail() {
   selectedRepId = null;
-  document.getElementById('rep-detail-panel').style.display = 'none';
+  const panel = document.getElementById('rep-detail-panel');
+  panel.style.display = 'none';
+  panel.classList.remove('active-panel');
   renderRepsGrid(allRepsData);
 }
 
