@@ -3160,9 +3160,33 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
   document.getElementById('assign-order-id').value = orderId;
   document.getElementById('modal-assign').classList.add('open');
 
+  // Find ALL pending orders for same customer at same location (multi-product cart)
+  const sibling = allOrders.filter(o =>
+    o.status === 'pending' &&
+    o.customer_name === customerName &&
+    o.delivery_location === location &&
+    o.id !== orderId
+  );
+  // Bundle: this order + siblings
+  const allOrdersForCustomer = [
+    { name: productName, qty: allOrders.find(o=>o.id===orderId)?.quantity||1, price: amount },
+    ...sibling.map(o => ({ name: o.products?.name||'—', qty: o.quantity||1, price: o.total_price||0 }))
+  ];
+  const grandTotal = allOrdersForCustomer.reduce((s,o) => s + parseFloat(o.price||0), 0);
+
   const select = document.getElementById('assign-logistics-select');
   select.innerHTML = '<option value="">Select partner...</option>' +
     logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone||''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
+
+  function buildWAMsg(lname) {
+    const itemLines = allOrdersForCustomer.map(function(o,i) {
+      return '   ' + (i+1) + '. ' + o.name + ' x ' + o.qty + ' = N' + parseFloat(o.price).toLocaleString();
+    }).join('\n');
+    var multiNote = allOrdersForCustomer.length > 1
+      ? allOrdersForCustomer.length + ' Products Ordered:\n' + itemLines + '\n\nTotal to collect: N' + grandTotal.toLocaleString()
+      : 'Product: ' + productName + ' x ' + ((allOrders.find(function(x){return x.id===orderId;})||{}).quantity||1) + '\nAmount to collect: N' + parseFloat(amount).toLocaleString();
+    return 'Hello ' + lname + ',\n\nNew delivery assigned:\n\nCustomer: ' + customerName + '\nLocation: ' + location + '\n\n' + multiNote + '\n\nOpen your portal:\nhttps://livingwell-logistics.vercel.app\n\nThank you!';
+  }
 
   function updateWAPreview() {
     const opt = select.options[select.selectedIndex];
@@ -3174,7 +3198,7 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
       pendingWhatsAppUrl = null;
       return;
     }
-    const msg = `Hello ${lname},\n\nYou have a new delivery assigned to you:\n\n👤 Customer: ${customerName}\n📦 Product: ${productName}\n📍 Location: ${location}\n💰 Amount: ₦${parseFloat(amount).toLocaleString()}\n\nPlease open your portal to accept and manage this delivery:\nhttps://livingwell-logistics.vercel.app\n\nThank you!`;
+    const msg = buildWAMsg(lname);
     document.getElementById('whatsapp-msg-preview').textContent = msg;
     document.getElementById('whatsapp-preview').style.display = 'block';
     const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
@@ -3185,7 +3209,7 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
 
   select.onchange = updateWAPreview;
 
-  // Auto-select first partner if only one exists, and trigger preview immediately
+  // Auto-select first partner if only one exists
   if (logisticsPartners.length === 1) {
     select.selectedIndex = 1;
     updateWAPreview();
@@ -4965,35 +4989,41 @@ function openWhatsAppFromOrder(orderId) {
   const o = allOrders.find(x => x.id === orderId);
   if (!o) { showToast('Order not found', 'error'); return; }
 
-  // Try every possible path the phone could be nested under
   const delivery = Array.isArray(o.deliveries) ? o.deliveries[0] : o.deliveries;
   const lp = delivery?.logistics_partners || {};
   const phone = (lp.phone || '').replace(/[^0-9]/g, '').replace(/^0/, '234');
   const partnerName = lp.name || 'Logistics Partner';
-  const product = o.products?.name || '—';
   const customer = o.customer_name || '—';
   const location = o.delivery_location || '—';
-  const amount = parseFloat(o.total_price || 0).toLocaleString();
 
   if (!phone) {
     showToast('No phone number found for this logistics partner', 'error');
     return;
   }
 
-  const msg = `Hello ${partnerName} 👋
+  // Find ALL orders for same customer at same location assigned to same partner
+  const siblingOrders = allOrders.filter(x =>
+    x.id !== orderId &&
+    x.customer_name === customer &&
+    x.delivery_location === location &&
+    (x.status === 'assigned' || x.status === 'pending')
+  );
+  const allForCustomer = [o, ...siblingOrders];
+  const grandTotal = allForCustomer.reduce((s,x) => s + parseFloat(x.total_price||0), 0);
 
-Delivery reminder:
+  let orderBlock = '';
+  if (allForCustomer.length > 1) {
+    const lineItems = allForCustomer.map(function(x,i) {
+      return '   ' + (i+1) + '. ' + (x.products&&x.products.name||'Product') + ' x ' + (x.quantity||1) + ' = N' + parseFloat(x.total_price||0).toLocaleString();
+    }).join('\n');
+    orderBlock = allForCustomer.length + ' Products:\n' + lineItems + '\n\nTotal to collect: N' + grandTotal.toLocaleString();
+  } else {
+    orderBlock = 'Product: ' + (o.products&&o.products.name||'Product') + ' x ' + (o.quantity||1) + '\nAmount to collect: N' + parseFloat(o.total_price||0).toLocaleString();
+  }
 
-👤 Customer: ${customer}
-📦 Product: ${product} × ${o.quantity}
-📍 Location: ${location}
-💰 Amount to collect: ₦${amount}
+  var msg = 'Hello ' + partnerName + '\n\nDelivery reminder:\n\nCustomer: ' + customer + '\nLocation: ' + location + '\n\n' + orderBlock + '\n\nPlease update delivery status once done.\n\n- Living Well Admin';
 
-Please update the delivery status once done.
-
-— Living Well Admin`;
-
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
 }
 
 function openWhatsAppModal(deliveryId) {
