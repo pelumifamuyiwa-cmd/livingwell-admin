@@ -5050,17 +5050,17 @@ function showToast(msg, type='') {
 // ── ADMIN MANAGEMENT (OWNER ONLY) ──
 async function loadAdminsPage() {
   const list = document.getElementById('admins-list');
-  if (!list) return;
-  if (currentUserProfile.role !== 'owner') {
-    list.innerHTML = '<div style="color:var(--red);padding:16px;">Access denied. Only the Owner can manage admins.</div>';
-    return;
-  }
+  if (!list) { console.log('admins-list element not found'); return; }
+  console.log('loadAdminsPage called, role:', currentUserProfile.role);
   list.innerHTML = '<div class="loading">Loading...</div>';
   try {
-    const data = await api('profiles?role=in.("owner","manager")&select=*&order=full_name') || [];
-    console.log('Admins data:', JSON.stringify(data));
-    if (!data.length) { list.innerHTML = '<div style="padding:16px;color:var(--text3);">No admins found.</div>'; return; }
-    list.innerHTML = data.map(a => `
+    const data = await api('profiles?select=*&order=full_name') || [];
+    console.log('All profiles:', JSON.stringify(data));
+    const admins = data.filter(p => p.role === 'owner' || p.role === 'manager');
+    console.log('Filtered admins:', JSON.stringify(admins));
+    if (!admins.length) { list.innerHTML = '<div style="padding:16px;color:var(--text3);">No admins found.</div>'; return; }
+    const data2 = admins;
+    list.innerHTML = data2.map(a => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;gap:12px;">
           <div style="width:38px;height:38px;border-radius:10px;background:var(--purple-dim);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--purple-light);font-size:0.85rem;">
