@@ -2714,7 +2714,6 @@ function initApp() {
   document.getElementById('user-display-name').textContent = name;
   document.getElementById('user-display-role').textContent = currentUserProfile.role === 'owner' ? 'Owner' : 'Manager';
   // Show owner-only nav items
-  console.log('Current role:', currentUserProfile.role, 'Profile:', JSON.stringify(currentUserProfile));
   document.querySelectorAll('.owner-only').forEach(el => {
     el.style.display = currentUserProfile.role === 'owner' ? 'flex' : 'none';
   });
@@ -5050,14 +5049,11 @@ function showToast(msg, type='') {
 // ── ADMIN MANAGEMENT (OWNER ONLY) ──
 async function loadAdminsPage() {
   const list = document.getElementById('admins-list');
-  if (!list) { console.log('admins-list element not found'); return; }
-  console.log('loadAdminsPage called, role:', currentUserProfile.role);
+  if (!list) return;
   list.innerHTML = '<div class="loading">Loading...</div>';
   try {
     const data = await api('profiles?select=*&order=full_name') || [];
-    console.log('All profiles:', JSON.stringify(data));
     const admins = data.filter(p => p.role === 'owner' || p.role === 'manager');
-    console.log('Filtered admins:', JSON.stringify(admins));
     if (!admins.length) { list.innerHTML = '<div style="padding:16px;color:var(--text3);">No admins found.</div>'; return; }
     const data2 = admins;
     list.innerHTML = data2.map(a => `
