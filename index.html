@@ -5057,7 +5057,8 @@ async function loadAdminsPage() {
   }
   list.innerHTML = '<div class="loading">Loading...</div>';
   try {
-    const data = await api('profiles?role=in.(owner,manager)&select=*&order=full_name') || [];
+    const data = await api('profiles?role=in.("owner","manager")&select=*&order=full_name') || [];
+    console.log('Admins data:', JSON.stringify(data));
     if (!data.length) { list.innerHTML = '<div style="padding:16px;color:var(--text3);">No admins found.</div>'; return; }
     list.innerHTML = data.map(a => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border);">
