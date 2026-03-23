@@ -3781,7 +3781,7 @@ async function viewDeliveryReceipt(orderId, customerName, productName, amount) {
   try {
     // Find delivery for this order
     const rows = await api(
-      `deliveries?order_id=eq.${orderId}&select=remittance_receipt_url,remitted_at,remitted_to_admin,customer_paid,status,logistics_partner_id,logistics_partners(name)`
+      `deliveries?order_id=eq.${orderId}&select=remittance_receipt_url,remitted_at,remitted_to_admin,remittance_cancelled,remittance_cancelled_at,customer_paid,status,logistics_partner_id,logistics_partners(name)`
     ) || [];
 
     const delivery = rows[0];
@@ -3794,7 +3794,20 @@ async function viewDeliveryReceipt(orderId, customerName, productName, amount) {
     const partnerId = delivery.logistics_partner_id;
     const remittedAt = delivery.remitted_at ? new Date(delivery.remitted_at).toLocaleString('en-NG', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }) : null;
     const isRemitted = delivery.remitted_to_admin;
+    const isCancelled = delivery.remittance_cancelled === true;
     let receiptUrl = delivery.remittance_receipt_url;
+
+    // Show cancelled remittance alert to admin
+    if (isCancelled && !isRemitted) {
+      document.getElementById('rv-body').innerHTML = `
+        <div style="padding:20px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.25);border-radius:14px;margin-bottom:16px;">
+          <div style="font-size:1.2rem;margin-bottom:8px;">⚠️</div>
+          <div style="font-weight:700;color:#DC2626;margin-bottom:6px;">Remittance Reverted by Logistics</div>
+          <div style="font-size:0.78rem;color:var(--text3);line-height:1.6;">This delivery was previously marked as remitted but has been reversed by the logistics partner. The amount has NOT been received by admin. Please follow up with the logistics partner directly.</div>
+          <div style="margin-top:10px;font-size:0.75rem;color:var(--text3);">Reverted at: <strong style="color:var(--text2);">${delivery.remittance_cancelled_at ? new Date(delivery.remittance_cancelled_at).toLocaleString('en-NG',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}) : 'Unknown'}</strong></div>
+        </div>`;
+      return;
+    }
 
     // If remitted but no receipt on this row, check if partner uploaded receipt on any batch remittance
     if (isRemitted && !receiptUrl && partnerId) {
