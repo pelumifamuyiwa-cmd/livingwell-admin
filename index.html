@@ -1331,6 +1331,28 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <button class="btn btn-ghost btn-sm" onclick="showPage('logistics')" style="font-size:0.75rem;">View Stock →</button>
       </div>
 
+      <!-- Remittance Cancelled Alert Banner -->
+      <div id="remit-cancel-alert" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:14px;padding:14px 20px;margin-bottom:20px;align-items:center;gap:12px;flex-wrap:wrap;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" width="20" height="20" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div style="flex:1;">
+          <div style="font-size:0.85rem;font-weight:700;color:var(--amber);">⚠ Remittance Cancelled by Logistics</div>
+          <div id="remit-cancel-alert-text" style="font-size:0.78rem;color:var(--text2);margin-top:2px;"></div>
+          <div style="font-size:0.72rem;color:var(--text3);margin-top:3px;">Payment records removed &amp; stock restored automatically. Please follow up with the logistics partner.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('deliveries');setTimeout(()=>{const sel=document.querySelector('.filter-select');if(sel){sel.value='remittance_cancelled';filterDeliveriesByStatus('remittance_cancelled');}},300);" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber);">View Affected →</button>
+      </div>
+
+      <!-- Paid Reverted Alert Banner -->
+      <div id="paid-reverted-alert" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:14px;padding:14px 20px;margin-bottom:20px;align-items:center;gap:12px;flex-wrap:wrap;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" width="20" height="20" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div style="flex:1;">
+          <div style="font-size:0.85rem;font-weight:700;color:var(--amber);">&#8629; Delivery Paid Status Reverted by Logistics</div>
+          <div id="paid-reverted-alert-text" style="font-size:0.78rem;color:var(--text2);margin-top:2px;"></div>
+          <div style="font-size:0.72rem;color:var(--text3);margin-top:3px;">Payment record removed and stock restored automatically. Delivery is back to Pending.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showPage('deliveries');setTimeout(()=>{const sel=document.querySelector('.filter-select');if(sel){sel.value='paid_reverted';filterDeliveriesByStatus('paid_reverted');}},300);" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber);">View Affected &#8594;</button>
+      </div>
+
       <div class="two-col">
         <!-- Recent Orders -->
         <div class="card">
@@ -1481,6 +1503,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
               <option value="in_transit">In Transit</option>
               <option value="delivered_payment_made">Delivered - Paid</option>
               <option value="delivered_awaiting_payment">Delivered - Awaiting Pay</option>
+              <option value="remittance_cancelled">⚠ Remittance Cancelled</option>
+              <option value="paid_reverted">↩ Paid Status Reverted</option>
             </select>
           </div>
         </div>
@@ -2658,6 +2682,30 @@ async function handleLogin() {
   } catch(e) {
     errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
   }
+
+    // ── PAID REVERTED ALERT ──
+    try {
+      const reverted = await api(
+        `deliveries?paid_reverted=eq.true&select=id,paid_reverted_at,logistics_partners(name),orders(customer_name,total_price)&order=paid_reverted_at.desc&limit=10`
+      ) || [];
+      const alertEl = document.getElementById('paid-reverted-alert');
+      const textEl  = document.getElementById('paid-reverted-alert-text');
+      if (alertEl && reverted.length > 0) {
+        alertEl.style.display = 'flex';
+        const lines = reverted.map(d => {
+          const partner  = d.logistics_partners?.name || 'Logistics';
+          const customer = d.orders?.customer_name || 'Unknown';
+          const amount   = d.orders?.total_price ? '\u20a6' + parseFloat(d.orders.total_price).toLocaleString() : '';
+          const when     = d.paid_reverted_at
+            ? new Date(d.paid_reverted_at).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+            : '';
+          return `${partner} &#8212; ${customer}${amount ? ' &middot; ' + amount : ''}${when ? ' (reverted ' + when + ')' : ''}`;
+        });
+        if (textEl) textEl.innerHTML = lines.join('<br>');
+      } else if (alertEl) {
+        alertEl.style.display = 'none';
+      }
+    } catch(e) { console.warn('Paid revert check failed:', e); }
 }
 
 function handleLogout() {
@@ -2875,6 +2923,31 @@ async function loadDashboard() {
           alertText.textContent = lowItems.map(s => `${s.logistics_partners?.name||'Partner'}: ${s.products?.name||'Product'} (${s.quantity_remaining} left)`).join(' · ');
         } else {
           alertEl.style.display = 'none';
+        }
+      }
+    } catch(e) {}
+
+    // Remittance cancellation check — alert admin if any logistics partner erroneously remitted then cancelled
+    try {
+      const cancelledRemits = await api(
+        `deliveries?remittance_cancelled=eq.true&remitted_to_admin=eq.false&select=id,remittance_cancelled_at,logistics_partners(name),orders(customer_name,total_price)&order=remittance_cancelled_at.desc&limit=10`
+      ) || [];
+      const rcAlert = document.getElementById('remit-cancel-alert');
+      const rcText  = document.getElementById('remit-cancel-alert-text');
+      if (rcAlert && rcText) {
+        if (cancelledRemits.length > 0) {
+          rcAlert.style.display = 'flex';
+          rcText.textContent = cancelledRemits.map(d => {
+            const partner  = d.logistics_partners?.name || 'Unknown partner';
+            const customer = d.orders?.customer_name || '—';
+            const amount   = d.orders?.total_price ? '₦' + parseFloat(d.orders.total_price).toLocaleString() : '';
+            const when     = d.remittance_cancelled_at
+              ? new Date(d.remittance_cancelled_at).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+              : '';
+            return `${partner} — ${customer}${amount ? ' · ' + amount : ''}${when ? ' (reverted ' + when + ')' : ''}`;
+          }).join('  |  ');
+        } else {
+          rcAlert.style.display = 'none';
         }
       }
     } catch(e) {}
@@ -3335,21 +3408,49 @@ function renderDeliveries(deliveries) {
   tbody.innerHTML = deliveries.map(d => {
     const ts = d.assigned_at || d.created_at;
     const timeOnly = ts ? new Date(ts).toLocaleTimeString('en-NG', { hour:'2-digit', minute:'2-digit', hour12:true }) + ', ' + new Date(ts).toLocaleDateString('en-NG', { day:'numeric', month:'short' }) : '—';
+
+    // Flag erroneous remittance cancellation clearly for admin
+    const isCancelledRemit = d.remittance_cancelled === true && !d.remitted_to_admin;
+    const cancelledAt = d.remittance_cancelled_at
+      ? new Date(d.remittance_cancelled_at).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+      : '';
+
+    const rowStyle = isCancelledRemit ? 'background:rgba(244,63,94,0.06);border-left:3px solid var(--red);' : '';
+
+    const cancelledBadge = isCancelledRemit
+      ? `<div style="margin-top:4px;">
+           <span style="font-size:0.6rem;font-weight:700;color:var(--red);background:var(--red-dim);border:1px solid rgba(244,63,94,0.25);border-radius:4px;padding:2px 6px;">
+             ⚠ REMIT CANCELLED${cancelledAt ? ' · ' + cancelledAt : ''}
+           </span>
+           <div style="font-size:0.65rem;color:var(--text3);margin-top:2px;">Payment record removed · Stock restored · Follow up needed</div>
+         </div>`
+      : '';
+
     return `
-    <tr>
+    <tr style="${rowStyle}">
       <td class="td-name" style="font-size:0.8rem;">${d.orders?.customer_name||'—'}</td>
       <td style="font-size:0.78rem;color:var(--text2);">${d.orders?.products?.name||'—'}</td>
       <td style="font-size:0.78rem;font-weight:600;color:var(--purple-light);">${d.logistics_partners?.name||'—'}</td>
       <td style="font-size:0.78rem;color:var(--text2);">${d.orders?.delivery_location||'—'}</td>
       <td class="td-amount" style="color:var(--green);font-size:0.8rem;">₦${parseFloat(d.orders?.total_price||0).toLocaleString()}</td>
-      <td><span class="badge badge-${d.status}">${(d.status||'').replace(/_/g,' ')}</span></td>
+      <td>
+        <span class="badge badge-${d.status}">${(d.status||'').replace(/_/g,' ')}</span>
+        ${cancelledBadge}
+      </td>
       <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${timeOnly}</td>
     </tr>`;
   }).join('');
 }
 
 function filterDeliveriesByStatus(status) {
-  const filtered = status ? allDeliveries.filter(d => d.status === status) : allDeliveries;
+  let filtered;
+  if (status === 'remittance_cancelled') {
+    filtered = allDeliveries.filter(d => d.remittance_cancelled === true && !d.remitted_to_admin);
+  } else if (status === 'paid_reverted') {
+    filtered = allDeliveries.filter(d => d.paid_reverted === true);
+  } else {
+    filtered = status ? allDeliveries.filter(d => d.status === status) : allDeliveries;
+  }
   renderDeliveries(filtered);
 }
 
