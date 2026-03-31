@@ -2683,30 +2683,6 @@ async function handleLogin() {
     errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
   }
 
-    // ── PAID REVERTED ALERT ──
-    try {
-      const reverted = await api(
-        `deliveries?paid_reverted=eq.true&select=id,paid_reverted_at,logistics_partners(name),orders(customer_name,total_price)&order=paid_reverted_at.desc&limit=10`
-      ) || [];
-      const alertEl = document.getElementById('paid-reverted-alert');
-      const textEl  = document.getElementById('paid-reverted-alert-text');
-      if (alertEl && reverted.length > 0) {
-        alertEl.style.display = 'flex';
-        const lines = reverted.map(d => {
-          const partner  = d.logistics_partners?.name || 'Logistics';
-          const customer = d.orders?.customer_name || 'Unknown';
-          const amount   = d.orders?.total_price ? '\u20a6' + parseFloat(d.orders.total_price).toLocaleString() : '';
-          const when     = d.paid_reverted_at
-            ? new Date(d.paid_reverted_at).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
-            : '';
-          return `${partner} &#8212; ${customer}${amount ? ' &middot; ' + amount : ''}${when ? ' (reverted ' + when + ')' : ''}`;
-        });
-        if (textEl) textEl.innerHTML = lines.join('<br>');
-      } else if (alertEl) {
-        alertEl.style.display = 'none';
-      }
-    } catch(e) { console.warn('Paid revert check failed:', e); }
-}
 
 function handleLogout() {
   localStorage.removeItem('lw_token');
@@ -2951,6 +2927,32 @@ async function loadDashboard() {
         }
       }
     } catch(e) {}
+
+    // Paid-status reverted check — alert admin when logistics partner reverts a paid delivery
+    try {
+      const reverted = await api(
+        `deliveries?paid_reverted=eq.true&select=id,paid_reverted_at,logistics_partners(name),orders(customer_name,total_price)&order=paid_reverted_at.desc&limit=10`
+      ) || [];
+      const alertEl = document.getElementById('paid-reverted-alert');
+      const textEl  = document.getElementById('paid-reverted-alert-text');
+      if (alertEl && textEl) {
+        if (reverted.length > 0) {
+          alertEl.style.display = 'flex';
+          const lines = reverted.map(d => {
+            const partner  = d.logistics_partners?.name || 'Logistics';
+            const customer = d.orders?.customer_name || 'Unknown';
+            const amount   = d.orders?.total_price ? '₦' + parseFloat(d.orders.total_price).toLocaleString() : '';
+            const when     = d.paid_reverted_at
+              ? new Date(d.paid_reverted_at).toLocaleString('en-NG', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+              : '';
+            return `${partner} — ${customer}${amount ? ' · ' + amount : ''}${when ? ' (reverted ' + when + ')' : ''}`;
+          });
+          textEl.innerHTML = lines.join('<br>');
+        } else {
+          alertEl.style.display = 'none';
+        }
+      }
+    } catch(e) { console.warn('Paid revert check failed:', e); }
 
   } catch(e) {
     showToast('Failed to load dashboard: ' + e.message, 'error');
