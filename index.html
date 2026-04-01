@@ -2795,7 +2795,10 @@ function toggleSidebar() {
 
 // ── API HELPER ──
 async function api(path, method = 'GET', body = null, extraHeaders = {}) {
-  const token = localStorage.getItem('lw_token') || SUPABASE_KEY;
+  // Use SERVICE_KEY for all write operations so any admin (owner or manager)
+  // can create, update, and delete records regardless of RLS restrictions on their personal JWT.
+  const isWrite = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method.toUpperCase());
+  const token = isWrite ? SERVICE_KEY : (localStorage.getItem('lw_token') || SUPABASE_KEY);
   if (!token) throw new Error('Not authenticated');
   const opts = {
     method,
