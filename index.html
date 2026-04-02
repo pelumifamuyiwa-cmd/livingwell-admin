@@ -605,26 +605,10 @@ select.form-input option {
   .table-wrap thead th:nth-child(3) { display: none; }
   #recent-orders-body td:nth-child(3) { display: none; }
 
-  /* Make recent orders table fit without scrolling */
-  #page-dashboard .table-wrap { overflow-x: hidden; }
-  #page-dashboard .table-wrap table { table-layout: fixed; width: 100%; }
+  /* Recent orders — swipeable on mobile, slightly tighter text */
+  #page-dashboard .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #page-dashboard .table-wrap table th,
-  #page-dashboard .table-wrap table td { 
-    white-space: normal; 
-    word-break: break-word;
-    font-size: 0.72rem;
-    padding: 8px 6px;
-  }
-  #page-dashboard .table-wrap table th:nth-child(1),
-  #page-dashboard .table-wrap table td:nth-child(1) { width: 28%; }
-  #page-dashboard .table-wrap table th:nth-child(2),
-  #page-dashboard .table-wrap table td:nth-child(2) { width: 28%; }
-  #page-dashboard .table-wrap table th:nth-child(3),
-  #page-dashboard .table-wrap table td:nth-child(3) { display: none; }
-  #page-dashboard .table-wrap table th:nth-child(4),
-  #page-dashboard .table-wrap table td:nth-child(4) { width: 24%; }
-  #page-dashboard .table-wrap table th:nth-child(5),
-  #page-dashboard .table-wrap table td:nth-child(5) { width: 20%; }
+  #page-dashboard .table-wrap table td { font-size: 0.72rem; padding: 8px 8px; white-space: nowrap; }
 }
 
 table { width: 100%; border-collapse: collapse; }
