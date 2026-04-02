@@ -6326,7 +6326,8 @@ function autoResizeChatInput(el) { el.style.height='auto'; el.style.height=Math.
 function chatKeyDown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();} }
 function sendChip(el) { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
 
-async function fetchBusinessContext() {
+async function fetchBusinessContext(question) {
+  const q = (question||'').toLowerCase();
   const today = new Date().toISOString().split('T')[0];
   const now = new Date();
   const day = now.getDay();
@@ -6334,20 +6335,39 @@ async function fetchBusinessContext() {
   const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
   const weekStart = monday.toISOString();
 
-  const [orders, reps, deliveries, payments, stock, logistics_stock, logistics_partners] = await Promise.all([
-    api(`orders?select=id,status,total_price,created_at,customer_name,customer_phone,delivery_location,quantity,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
-    api(`profiles?role=eq.rep&select=id,full_name,ref_code,phone,is_active,date_joined`).catch(()=>[]),
-    api(`deliveries?select=id,status,order_id,assigned_at,remitted_to_admin,remitted_at,customer_paid,logistics_partner_id,logistics_partners(name),orders(customer_name,total_price,created_at,profiles(full_name,ref_code))&order=assigned_at.desc`).catch(()=>[]),
-    api(`payments?select=amount,payment_method,created_at,order_id&order=created_at.desc`).catch(()=>[]),
-    api(`stock?select=quantity,updated_at,products(id,name,price,is_active)`).catch(()=>[]),
-    api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)`).catch(()=>[]),
-    api(`logistics_partners?select=id,name,phone,coverage_area,is_active`).catch(()=>[])
-  ]);
+  // Detect if question needs raw/specific data
+  const needsDateDetail   = /\b(\d{1,2}[\/\-]\d{1,2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|yesterday|specific|exact|list|show me|breakdown|which day|which date)/.test(q);
+  const needsRepDetail    = /\b(rep|perform|who|leaderboard|rank|top|bottom|each rep|per rep)/.test(q);
+  const needsLogistics    = /\b(logistics|partner|deliver|ship|assign|remit|stock for|remaining for|sent to)/.test(q);
+  const needsPayDetail    = /\b(payment|cash|transfer|pos|method|collected|remit)/.test(q);
+  const needsStockDetail  = /\b(stock|inventory|product|quantity|warehouse|remaining|how much stock)/.test(q);
+
+  // Always fetch orders + reps (core data, needed for almost everything)
+  // Fetch detailed tables only when question needs them
+  const fetches = [
+    api(`orders?select=id,status,total_price,created_at,customer_name,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
+    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+    needsLogistics
+      ? api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)`).catch(()=>[])
+      : Promise.resolve([]),
+    needsLogistics
+      ? api(`deliveries?select=status,assigned_at,remitted_to_admin,customer_paid,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[])
+      : api(`deliveries?select=status,customer_paid,remitted_to_admin&order=assigned_at.desc`).catch(()=>[]),
+    needsPayDetail
+      ? api(`payments?select=amount,payment_method,created_at&order=created_at.desc`).catch(()=>[])
+      : api(`payments?select=amount,created_at&order=created_at.desc`).catch(()=>[]),
+    needsStockDetail
+      ? api(`stock?select=quantity,products(name,price,is_active)`).catch(()=>[])
+      : Promise.resolve([]),
+  ];
+
+  const [orders, reps, logistics_stock, deliveries, payments, stock] = await Promise.all(fetches);
 
   const todayOrders = (orders||[]).filter(o=>o.created_at?.startsWith(today));
   const weekOrders  = (orders||[]).filter(o=>o.created_at>=weekStart);
   const activeReps  = (reps||[]).filter(r=>r.is_active);
 
+  // Build rep performance (always computed, cheap)
   const repMap = {};
   activeReps.forEach(r=>{repMap[r.id]={name:r.full_name,ref:r.ref_code,total_orders:0,delivered_orders:0,revenue:0};});
   (orders||[]).forEach(o=>{
@@ -6357,24 +6377,23 @@ async function fetchBusinessContext() {
     }
   });
 
+  // Logistics stock grouped by partner (only if needed)
   const logisticsStockByPartner = {};
   (logistics_stock||[]).forEach(s=>{
-    const name = s.logistics_partners?.name || s.logistics_partner_id;
-    if(!logisticsStockByPartner[name]) logisticsStockByPartner[name] = [];
+    const name = s.logistics_partners?.name||'Unknown';
+    if(!logisticsStockByPartner[name]) logisticsStockByPartner[name]=[];
     logisticsStockByPartner[name].push({
-      product: s.products?.name,
-      unit_price: s.products?.price,
-      qty_sent: s.quantity_sent,
-      qty_confirmed: s.quantity_confirmed,
-      qty_remaining: s.quantity_remaining,
-      confirmed: s.confirmed,
-      sent_at: s.sent_at?.split('T')[0]
+      product:s.products?.name, unit_price:s.products?.price,
+      qty_sent:s.quantity_sent, qty_confirmed:s.quantity_confirmed,
+      qty_remaining:s.quantity_remaining, confirmed:s.confirmed,
+      sent_at:s.sent_at?.split('T')[0]
     });
   });
 
-  return {
-    today,
-    week_start: weekStart,
+  const context = {
+    today, week_start: weekStart,
+
+    // ── SUMMARY (always included, lightweight) ──
     summary: {
       orders_today: todayOrders.length,
       orders_this_week: weekOrders.length,
@@ -6393,47 +6412,52 @@ async function fetchBusinessContext() {
       total_payments_collected: (payments||[]).reduce((s,p)=>s+parseFloat(p.amount||0),0),
       payments_today: (payments||[]).filter(p=>p.created_at?.startsWith(today)).reduce((s,p)=>s+parseFloat(p.amount||0),0),
     },
-    orders: (orders||[]).map(o=>({
-      date: o.created_at?.split('T')[0],
-      time: o.created_at?.split('T')[1]?.slice(0,5),
-      customer: o.customer_name,
-      phone: o.customer_phone,
-      location: o.delivery_location,
-      qty: o.quantity,
-      amount: parseFloat(o.total_price||0),
-      status: o.status,
-      rep: o.profiles?.full_name,
-      rep_ref: o.profiles?.ref_code
-    })),
-    reps: Object.values(repMap).sort((a,b)=>b.delivered_orders-a.delivered_orders),
-    deliveries: (deliveries||[]).map(d=>({
-      date: d.assigned_at?.split('T')[0],
-      status: d.status,
-      logistics_partner: d.logistics_partners?.name,
-      customer: d.orders?.customer_name,
-      amount: parseFloat(d.orders?.total_price||0),
-      rep: d.orders?.profiles?.full_name,
-      customer_paid: d.customer_paid,
-      remitted_to_admin: d.remitted_to_admin,
-      remitted_at: d.remitted_at?.split('T')[0]
-    })),
-    payments: (payments||[]).map(p=>({
-      date: p.created_at?.split('T')[0],
-      amount: parseFloat(p.amount||0),
-      method: p.payment_method
-    })),
-    main_stock: (stock||[]).map(s=>({
-      product: s.products?.name,
-      qty_in_warehouse: s.quantity,
-      unit_price: s.products?.price,
-      active: s.products?.is_active,
-      last_updated: s.updated_at?.split('T')[0]
-    })),
-    logistics_partners: (logistics_partners||[]).map(l=>({
-      name: l.name, phone: l.phone, area: l.coverage_area, active: l.is_active
-    })),
-    logistics_stock_by_partner: logisticsStockByPartner
+
+    // ── REP PERFORMANCE (always included, already computed) ──
+    rep_performance: Object.values(repMap).sort((a,b)=>b.delivered_orders-a.delivered_orders),
+
+    // ── LOGISTICS STOCK (only when relevant) ──
+    ...(needsLogistics && Object.keys(logisticsStockByPartner).length > 0
+      ? { logistics_stock_by_partner: logisticsStockByPartner }
+      : {}),
+
+    // ── RAW DELIVERIES (only when relevant) ──
+    ...(needsLogistics
+      ? { deliveries: (deliveries||[]).map(d=>({
+            date:d.assigned_at?.split('T')[0], status:d.status,
+            partner:d.logistics_partners?.name, customer:d.orders?.customer_name,
+            amount:parseFloat(d.orders?.total_price||0), rep:d.orders?.profiles?.full_name,
+            customer_paid:d.customer_paid, remitted:d.remitted_to_admin
+          })) }
+      : {}),
+
+    // ── RAW ORDERS (only when date/specific query) ──
+    ...(needsDateDetail
+      ? { orders_raw: (orders||[]).map(o=>({
+            date:o.created_at?.split('T')[0], customer:o.customer_name,
+            amount:parseFloat(o.total_price||0), status:o.status,
+            rep:o.profiles?.full_name, ref:o.profiles?.ref_code
+          })) }
+      : {}),
+
+    // ── PAYMENTS DETAIL (only when relevant) ──
+    ...(needsPayDetail
+      ? { payments_detail: (payments||[]).map(p=>({
+            date:p.created_at?.split('T')[0],
+            amount:parseFloat(p.amount||0), method:p.payment_method
+          })) }
+      : {}),
+
+    // ── STOCK (only when relevant) ──
+    ...(needsStockDetail
+      ? { main_stock: (stock||[]).map(s=>({
+            product:s.products?.name, qty:s.quantity,
+            unit_price:s.products?.price, active:s.products?.is_active
+          })) }
+      : {}),
   };
+
+  return context;
 }
 
 async function sendChatMessage() {
@@ -6448,35 +6472,30 @@ async function sendChatMessage() {
   chatBusy=true; showTyping();
 
   try {
-    const context = await fetchBusinessContext();
+    const context = await fetchBusinessContext(text);
     const today = new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
     const systemPrompt = `You are a smart, precise business assistant for LivingWell, a Nigerian health/wellness product company. Today is ${today}. Currency is Nigerian Naira (₦).
 
-You have access to COMPLETE live business data below. Use it to answer ANY specific question — by date, by rep, by logistics partner, by product, or any combination.
-
-DATA:
+Live business data (tailored to your question):
 ${JSON.stringify(context, null, 2)}
 
 Rules:
-- Use **bold** for key figures
-- Format naira with ₦ and commas e.g. ₦1,250,000
-- For date-specific queries, filter the raw orders/payments/deliveries arrays by the "date" field
-- For logistics stock queries, use the logistics_stock_by_partner object which shows stock per partner
-- Never invent or estimate — only use what is in the data above
-- Be concise but complete. If asked for a breakdown, give the full breakdown.`;
+- Use **bold** for key figures. Format naira as ₦1,250,000
+- For date queries use orders_raw or payments_detail filtered by "date" field (format: YYYY-MM-DD)
+- For logistics stock use logistics_stock_by_partner — qty_remaining is current stock with each partner
+- rep_performance shows all reps ranked by delivered orders and revenue
+- Never invent data. If data is not in the context, say so.
+- Be concise but give full breakdowns when asked.`;
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify({
         model: GROQ_MODEL,
-        messages:[
-          {role:'system', content: systemPrompt},
-          {role:'user', content: text}
-        ],
-        max_tokens: 1024,
-        temperature: 0.2
+        messages:[{role:'system',content:systemPrompt},{role:'user',content:text}],
+        max_tokens: 800,
+        temperature: 0.15
       })
     });
     const data = await res.json();
@@ -6496,6 +6515,7 @@ Rules:
   }
   chatBusy=false;
 }
+
 
 </script>
 
