@@ -6292,9 +6292,39 @@ function closeWeeklyPerf() {
 // ── CHAT ENGINE v4: Full Context + Smart Aggregation + Minimal LLM Tokens ──
 let chatOpen = false;
 let chatBusy = false;
-const OR_KEY   = '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';
+let OR_KEY     = null;
 const OR_MODEL = 'qwen/qwen3-235b-a22b:free';
 const OR_URL   = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Fetch OR_KEY securely from Supabase app_config at runtime
+async function loadORKey() {
+  const SUPA_URL = 'https://azjwjswjecnacddcozuu.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTEyOTcsImV4cCI6MjA4ODYyNzI5N30.jojgbxPCkUC_czk19oeYF3b6FdbCQfpzzs9o8QdaXMs';
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/app_config?key=eq.openrouter_key&select=value`, {
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('LivingWell: app_config fetch failed', res.status, errText);
+      return;
+    }
+    const data = await res.json();
+    if (data?.[0]?.value) {
+      OR_KEY = data[0].value;
+      console.log('LivingWell: OR_KEY loaded successfully');
+    } else {
+      console.error('LivingWell: openrouter_key not found in app_config. Response:', JSON.stringify(data));
+    }
+  } catch(e) {
+    console.error('LivingWell: Failed to fetch OR_KEY', e.message);
+  }
+}
+loadORKey();
 
 // ── UI ──
 function toggleChat() {
@@ -6515,6 +6545,7 @@ async function fetchAllData(q) {
 // ── MAIN SEND ──
 async function sendChatMessage() {
   if (chatBusy) return;
+  if (!OR_KEY) { alert('AI assistant is still loading, please try again in a moment.'); return; }
   const input = document.getElementById('chat-input');
   const text  = input.value.trim();
   if (!text) return;
