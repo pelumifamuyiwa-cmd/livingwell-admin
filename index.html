@@ -6584,8 +6584,19 @@ async function fetchAllBusinessData(q) {
   };
 }
 
-// ── CALL GROQ VIA EDGE FUNCTION ──
+// ── CALL AI VIA EDGE FUNCTION (Groq first, Qwen fallback) ──
+// The edge function handles both models. It tries Groq first and falls back
+// to Qwen via OpenRouter if Groq fails or the token limit is exceeded.
+// Both API keys live as Supabase secrets — nothing is stored in this file.
+
+function estimateTokens(str) { return Math.ceil(str.length / 4); }
+const GROQ_TOKEN_LIMIT = 5800; // ~6k token context, leave headroom
+
 async function callAI(systemPrompt, userMessage) {
+  const totalTokens = estimateTokens(systemPrompt + userMessage);
+  // Tell the edge function whether to skip straight to Qwen
+  const preferQwen = totalTokens > GROQ_TOKEN_LIMIT;
+
   const res = await fetch(CHAT_FN, {
     method : 'POST',
     headers: {
@@ -6593,7 +6604,7 @@ async function callAI(systemPrompt, userMessage) {
       'apikey'       : SUPABASE_KEY,
       'Authorization': `Bearer ${localStorage.getItem('lw_token')||SUPABASE_KEY}`
     },
-    body: JSON.stringify({ systemPrompt, userMessage })
+    body: JSON.stringify({ systemPrompt, userMessage, preferQwen })
   });
   const data = await res.json();
   if(!res.ok) throw new Error(data?.error||'Edge function error');
