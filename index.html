@@ -6328,56 +6328,68 @@ function sendChip(el) { document.getElementById('chat-input').value=el.textConte
 
 async function fetchBusinessContext(question) {
   const q = (question||'').toLowerCase();
-  const today = new Date().toISOString().split('T')[0];
+
+  // Match dashboard exactly: use local date string in WAT (UTC+1)
+  const nowWAT = new Date(Date.now() + 60*60*1000); // shift by +1hr
+  const today = nowWAT.toISOString().split('T')[0];
   const now = new Date();
   const day = now.getDay();
   const diffToMon = day===0?-6:1-day;
   const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
   const weekStart = monday.toISOString();
 
-  // Detect if question needs raw/specific data
-  const needsDateDetail   = /\b(\d{1,2}[\/\-]\d{1,2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|yesterday|specific|exact|list|show me|breakdown|which day|which date)/.test(q);
-  const needsRepDetail    = /\b(rep|perform|who|leaderboard|rank|top|bottom|each rep|per rep)/.test(q);
-  const needsLogistics    = /\b(logistics|partner|deliver|ship|assign|remit|stock for|remaining for|sent to)/.test(q);
-  const needsPayDetail    = /\b(payment|cash|transfer|pos|method|collected|remit)/.test(q);
-  const needsStockDetail  = /\b(stock|inventory|product|quantity|warehouse|remaining|how much stock)/.test(q);
+  // Detect what the question needs
+  const needsDateDetail  = /(\d{1,2}[\/\-]\d{1,2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|yesterday|specific|exact|list|show me|breakdown|which day|which date)/.test(q);
+  const needsLogistics   = /(logistics|partner|deliver|ship|assign|remit|stock for|remaining for|sent to)/.test(q);
+  const needsPayDetail   = /(payment|cash|transfer|pos|method|collected|remit)/.test(q);
+  const needsStockDetail = /(stock|inventory|product|quantity|warehouse|remaining|how much stock)/.test(q);
 
-  // Always fetch orders + reps (core data, needed for almost everything)
-  // Fetch detailed tables only when question needs them
-  const fetches = [
+  // Fetch today's orders & payments the same way the dashboard does — filtered server-side
+  const [
+    ordersToday, paymentsToday,
+    ordersAll, reps,
+    logistics_stock, deliveries, payments, stock
+  ] = await Promise.all([
+    // Dashboard-matching queries (server-side filtered by today)
+    api(`orders?created_at=gte.${today}T00:00:00&select=id,status,total_price,customer_name,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
+    api(`payments?created_at=gte.${today}T00:00:00&select=amount_received,amount,payment_method`).catch(()=>[]),
+
+    // All orders for totals/history
     api(`orders?select=id,status,total_price,created_at,customer_name,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
     api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+
+    // Conditional fetches
     needsLogistics
       ? api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)`).catch(()=>[])
       : Promise.resolve([]),
     needsLogistics
       ? api(`deliveries?select=status,assigned_at,remitted_to_admin,customer_paid,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[])
-      : api(`deliveries?select=status,customer_paid,remitted_to_admin&order=assigned_at.desc`).catch(()=>[]),
+      : api(`deliveries?select=status,customer_paid,remitted_to_admin`).catch(()=>[]),
     needsPayDetail
-      ? api(`payments?select=amount,payment_method,created_at&order=created_at.desc`).catch(()=>[])
-      : api(`payments?select=amount,created_at&order=created_at.desc`).catch(()=>[]),
+      ? api(`payments?select=amount_received,amount,payment_method,created_at&order=created_at.desc`).catch(()=>[])
+      : api(`payments?select=amount_received,amount,created_at&order=created_at.desc`).catch(()=>[]),
     needsStockDetail
       ? api(`stock?select=quantity,products(name,price,is_active)`).catch(()=>[])
       : Promise.resolve([]),
-  ];
+  ]);
 
-  const [orders, reps, logistics_stock, deliveries, payments, stock] = await Promise.all(fetches);
+  // Revenue today: match dashboard (uses amount_received from payments table)
+  const revenueToday = (paymentsToday||[]).reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0);
 
-  const todayOrders = (orders||[]).filter(o=>o.created_at?.startsWith(today));
-  const weekOrders  = (orders||[]).filter(o=>o.created_at>=weekStart);
-  const activeReps  = (reps||[]).filter(r=>r.is_active);
+  const weekOrders = (ordersAll||[]).filter(o=>o.created_at>=weekStart);
+  const activeReps = (reps||[]).filter(r=>r.is_active);
 
-  // Build rep performance (always computed, cheap)
+  // Rep performance
   const repMap = {};
   activeReps.forEach(r=>{repMap[r.id]={name:r.full_name,ref:r.ref_code,total_orders:0,delivered_orders:0,revenue:0};});
-  (orders||[]).forEach(o=>{
+  (ordersAll||[]).forEach(o=>{
     if(repMap[o.rep_id]){
       repMap[o.rep_id].total_orders++;
       if(o.status==='delivered_payment_made'){repMap[o.rep_id].delivered_orders++;repMap[o.rep_id].revenue+=parseFloat(o.total_price||0);}
     }
   });
 
-  // Logistics stock grouped by partner (only if needed)
+  // Logistics stock by partner
   const logisticsStockByPartner = {};
   (logistics_stock||[]).forEach(s=>{
     const name = s.logistics_partners?.name||'Unknown';
@@ -6390,75 +6402,73 @@ async function fetchBusinessContext(question) {
     });
   });
 
+  const allPayments = (payments||[]);
+
   const context = {
     today, week_start: weekStart,
 
-    // ── SUMMARY (always included, lightweight) ──
     summary: {
-      orders_today: todayOrders.length,
+      // Orders — fetched same way as dashboard stat card
+      orders_today: (ordersToday||[]).length,
       orders_this_week: weekOrders.length,
-      total_orders: (orders||[]).length,
-      pending_orders: (orders||[]).filter(o=>o.status==='pending').length,
-      assigned_orders: (orders||[]).filter(o=>o.status==='assigned').length,
-      delivered_paid: (orders||[]).filter(o=>o.status==='delivered_payment_made').length,
-      delivered_awaiting_payment: (orders||[]).filter(o=>o.status==='delivered_awaiting_payment').length,
-      cancelled_orders: (orders||[]).filter(o=>o.status==='cancelled').length,
-      revenue_today: todayOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
-      revenue_this_week: weekOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
-      total_revenue: (orders||[]).filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
+      total_orders: (ordersAll||[]).length,
+      pending_orders: (ordersAll||[]).filter(o=>o.status==='pending').length,
+      assigned_orders: (ordersAll||[]).filter(o=>o.status==='assigned').length,
+      delivered_paid: (ordersAll||[]).filter(o=>o.status==='delivered_payment_made').length,
+      delivered_awaiting_payment: (ordersAll||[]).filter(o=>o.status==='delivered_awaiting_payment').length,
+      cancelled_orders: (ordersAll||[]).filter(o=>o.status==='cancelled').length,
+
+      // Revenue — uses payments table same as dashboard
+      revenue_today: revenueToday,
+      revenue_this_week: allPayments.filter(p=>p.created_at>=weekStart).reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0),
+      total_revenue: allPayments.reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0),
+
       total_active_reps: activeReps.length,
       pending_deliveries: (deliveries||[]).filter(d=>d.status==='assigned').length,
       unremitted_to_admin: (deliveries||[]).filter(d=>d.customer_paid&&!d.remitted_to_admin).length,
-      total_payments_collected: (payments||[]).reduce((s,p)=>s+parseFloat(p.amount||0),0),
-      payments_today: (payments||[]).filter(p=>p.created_at?.startsWith(today)).reduce((s,p)=>s+parseFloat(p.amount||0),0),
     },
 
-    // ── REP PERFORMANCE (always included, already computed) ──
     rep_performance: Object.values(repMap).sort((a,b)=>b.delivered_orders-a.delivered_orders),
 
-    // ── LOGISTICS STOCK (only when relevant) ──
     ...(needsLogistics && Object.keys(logisticsStockByPartner).length > 0
-      ? { logistics_stock_by_partner: logisticsStockByPartner }
-      : {}),
+      ? { logistics_stock_by_partner: logisticsStockByPartner } : {}),
 
-    // ── RAW DELIVERIES (only when relevant) ──
     ...(needsLogistics
       ? { deliveries: (deliveries||[]).map(d=>({
             date:d.assigned_at?.split('T')[0], status:d.status,
             partner:d.logistics_partners?.name, customer:d.orders?.customer_name,
             amount:parseFloat(d.orders?.total_price||0), rep:d.orders?.profiles?.full_name,
             customer_paid:d.customer_paid, remitted:d.remitted_to_admin
-          })) }
-      : {}),
+          })) } : {}),
 
-    // ── RAW ORDERS (only when date/specific query) ──
     ...(needsDateDetail
-      ? { orders_raw: (orders||[]).map(o=>({
+      ? { orders_raw: (ordersAll||[]).map(o=>({
             date:o.created_at?.split('T')[0], customer:o.customer_name,
             amount:parseFloat(o.total_price||0), status:o.status,
             rep:o.profiles?.full_name, ref:o.profiles?.ref_code
-          })) }
-      : {}),
+          })),
+          orders_today_detail: (ordersToday||[]).map(o=>({
+            customer:o.customer_name, amount:parseFloat(o.total_price||0),
+            status:o.status, rep:o.profiles?.full_name
+          }))
+        } : {}),
 
-    // ── PAYMENTS DETAIL (only when relevant) ──
     ...(needsPayDetail
-      ? { payments_detail: (payments||[]).map(p=>({
+      ? { payments_detail: allPayments.map(p=>({
             date:p.created_at?.split('T')[0],
-            amount:parseFloat(p.amount||0), method:p.payment_method
-          })) }
-      : {}),
+            amount:parseFloat(p.amount_received||p.amount||0), method:p.payment_method
+          })) } : {}),
 
-    // ── STOCK (only when relevant) ──
     ...(needsStockDetail
       ? { main_stock: (stock||[]).map(s=>({
             product:s.products?.name, qty:s.quantity,
             unit_price:s.products?.price, active:s.products?.is_active
-          })) }
-      : {}),
+          })) } : {}),
   };
 
   return context;
 }
+
 
 async function sendChatMessage() {
   if (chatBusy) return;
