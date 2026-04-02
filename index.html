@@ -605,10 +605,13 @@ select.form-input option {
   .table-wrap thead th:nth-child(3) { display: none; }
   #recent-orders-body td:nth-child(3) { display: none; }
 
-  /* Recent orders — swipeable on mobile, slightly tighter text */
+  /* Recent orders — swipeable on mobile */
   #page-dashboard .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #page-dashboard .table-wrap table th,
   #page-dashboard .table-wrap table td { font-size: 0.72rem; padding: 8px 8px; white-space: nowrap; }
+  /* Allow horizontal scroll to escape body clip */
+  #page-dashboard .card { overflow: visible; }
+  #page-dashboard .two-col { overflow: visible; }
 }
 
 table { width: 100%; border-collapse: collapse; }
