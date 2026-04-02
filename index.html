@@ -6289,14 +6289,14 @@ function closeWeeklyPerf() {
 </div>
 
 <script>
-// ── CHAT ENGINE v2: Intent Detection + Smart Supabase Queries + Groq LLM ──
+// ── CHAT ENGINE v3: Precision Intent + Minimal Token Supabase Queries ──
 let chatOpen = false;
 let chatBusy = false;
 const GROQ_KEY = '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';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// ── UI HELPERS ──
+// ── UI ──
 function toggleChat() {
   chatOpen = !chatOpen;
   document.getElementById('chat-window').classList.toggle('open', chatOpen);
@@ -6304,15 +6304,14 @@ function toggleChat() {
   if (chatOpen && document.getElementById('chat-messages').children.length === 0) initChat();
 }
 function initChat() {
-  appendBotMessage('👋 Hi! I\'m your LivingWell business assistant.\n\nAsk me anything about your orders, revenue, reps, deliveries, payments or stock — I\'ll pull live data instantly.\n\nWhat would you like to know?');
+  appendBotMessage('👋 Hi! I\'m your LivingWell assistant.\n\nYou can ask me things like:\n• Orders today / this week\n• Revenue today / this week / total\n• Rep performance & rankings\n• Stock levels\n• Logistics partner stock (e.g. "Nancy logistics stock")\n• Pending / cancelled orders\n• Payment breakdown\n• Deliveries & unremitted payments\n• Orders on a specific date\n\nWhat would you like to know?');
 }
 function appendBotMessage(text) {
   const msgs = document.getElementById('chat-messages');
   const div = document.createElement('div');
   div.className = 'chat-msg bot';
   div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble">${formatChatText(text)}</div>`;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
+  msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
 function appendUserMessage(text) {
   const msgs = document.getElementById('chat-messages');
@@ -6320,8 +6319,7 @@ function appendUserMessage(text) {
   const div = document.createElement('div');
   div.className = 'chat-msg user';
   div.innerHTML = `<div class="chat-msg-avatar">${initials}</div><div class="chat-msg-bubble">${escapeHtml(text)}</div>`;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
+  msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
 function showTyping() {
   const msgs = document.getElementById('chat-messages');
@@ -6332,250 +6330,512 @@ function showTyping() {
 }
 function hideTyping() { document.getElementById('chat-typing-indicator')?.remove(); }
 function formatChatText(t) {
-  return escapeHtml(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+  return escapeHtml(t)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n/g,'<br>');
 }
 function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function autoResizeChatInput(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,90)+'px'; }
 function chatKeyDown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();} }
 function sendChip(el) { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
 
-// ── INTENT DETECTION ──
-// Detects the primary intent from the user's question.
-// Returns one of: summary | orders_today | orders_date | revenue | rep_performance |
-//                 stock | logistics | deliveries | payments | pending | general
-function detectIntent(q) {
-  q = q.toLowerCase();
-  if (/(how many order|orders? today|today.*order|order.*today)/.test(q))           return 'orders_today';
-  if (/(revenue today|sales? today|money today|how much.*today|today.*revenue)/.test(q)) return 'revenue_today';
-  if (/(revenue this week|sales? this week|week.*revenue|revenue.*week)/.test(q))   return 'revenue_week';
-  if (/(total revenue|all.*revenue|overall revenue|total sales|all time)/.test(q))  return 'revenue_total';
-  if (/(revenue|sales|income|earnings|how much.*made|money|payment collected)/.test(q)) return 'revenue_today';
-  if (/(rep|agent|staff|who.*sell|top.*sell|best.*rep|performance|ranking)/.test(q)) return 'rep_performance';
-  if (/(stock|inventory|product|warehouse|how many.*left|remaining product)/.test(q)) return 'stock';
-  if (/(logistics|partner|sent to|stock for|remit|qty.*sent|quantity.*sent)/.test(q)) return 'logistics';
-  if (/(pending deliver|undelivered|awaiting deliver|not.*deliver)/.test(q))         return 'deliveries_pending';
-  if (/(deliver|shipment|dispatch|assigned.*order)/.test(q))                         return 'deliveries';
-  if (/(payment|cash|transfer|pos|bank|method|how.*paid)/.test(q))                  return 'payments';
-  if (/(pending order|unconfirmed|waiting.*confirm|not.*confirm)/.test(q))          return 'orders_pending';
-  if (/(cancel|cancelled)/.test(q))                                                  return 'orders_cancelled';
-  if (/(\d{1,2}[\/\-]\d{1,2}|\d{4}-\d{2}-\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|yesterday|last week|specific date|which day)/.test(q)) return 'orders_date';
-  if (/(summary|overview|dashboard|how.*business|business.*today|update)/.test(q))  return 'summary';
-  return 'summary'; // default to summary for unknown queries
+// ── DATE UTILITIES ──
+function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+function getWeekStart() {
+  const now = new Date();
+  const diff = now.getDay()===0 ? -6 : 1-now.getDay();
+  const mon = new Date(now); mon.setDate(now.getDate()+diff); mon.setHours(0,0,0,0);
+  return mon.toISOString();
+}
+function getMonthStart() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
+}
+function extractDateFromQ(q) {
+  // ISO format
+  const iso = q.match(/(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  // dd/mm or mm/dd
+  const slash = q.match(/(\d{1,2})[\/\-](\d{1,2})/);
+  if (slash) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(slash[2]).padStart(2,'0')}-${String(slash[1]).padStart(2,'0')}`;
+  }
+  // yesterday
+  if (/yesterday/.test(q)) {
+    const y = new Date(); y.setDate(y.getDate()-1);
+    return y.toISOString().split('T')[0];
+  }
+  // "last [weekday]" e.g. "last monday"
+  const days = {monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
+  for (const [name,num] of Object.entries(days)) {
+    if (q.includes('last '+name)||q.includes('last '+name.slice(0,3))) {
+      const now = new Date(); const cur = now.getDay();
+      let diff = cur - num; if(diff<=0) diff+=7;
+      const d = new Date(now); d.setDate(now.getDate()-diff);
+      return d.toISOString().split('T')[0];
+    }
+  }
+  // "3rd april", "april 3", "3 april" etc
+  const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12',
+    january:'01',february:'02',march:'03',april:'04',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+  for (const [k,v] of Object.entries(months)) {
+    const re = new RegExp(`(\\d{1,2})(?:st|nd|rd|th)?\\s*${k}|${k}\\s*(\\d{1,2})(?:st|nd|rd|th)?`,'i');
+    const m = q.match(re);
+    if (m) {
+      const dd = String(m[1]||m[2]).padStart(2,'0');
+      return `${new Date().getFullYear()}-${v}-${dd}`;
+    }
+  }
+  return null;
 }
 
-// ── SMART SUPABASE QUERIES — fetch only what the intent needs ──
+// ── EXTRACT NAMES (rep or partner) from question ──
+function extractName(q) {
+  // remove common noise words and return remaining meaningful word(s)
+  const noise = /\b(stock|logistics|partner|how|much|remaining|sent|inventory|for|the|of|show|me|what|is|check|order|orders|revenue|sales|delivery|deliveries|payment|payments|rep|agent|performance|ranking|top|best|total|today|week|month|this|last|all|give|tell|my|our|about|did|does|has|have|been|are|was|were)\b/gi;
+  const cleaned = q.replace(noise,'').replace(/\s+/g,' ').trim();
+  const words = cleaned.split(' ').filter(w=>w.length>=3 && !/^\d+$/.test(w));
+  return words.length>0 ? words[0].toLowerCase() : null;
+}
+
+// ── INTENT DETECTION ──
+// Question → intent mapping covering every realistic admin query
+function detectIntent(q) {
+  q = q.toLowerCase();
+
+  // Orders - specific time
+  if (/(order.*today|today.*order|how many order|orders? (placed |made |)today)/.test(q))       return 'orders_today';
+  if (/(order.*this week|this week.*order|week.*order|orders? this week)/.test(q))              return 'orders_week';
+  if (/(order.*this month|this month.*order|month.*order)/.test(q))                             return 'orders_month';
+  if (/(total order|all.*order|how many order.*ever|all time order)/.test(q))                   return 'orders_total';
+
+  // Revenue / Sales
+  if (/(revenue|sales|income|earning|how much|money (made|collected|received)).*(today|so far today)/.test(q)) return 'revenue_today';
+  if (/(revenue|sales|income|earning|how much).*(this week|week)/.test(q))                     return 'revenue_week';
+  if (/(revenue|sales|income|earning|how much).*(this month|month)/.test(q))                   return 'revenue_month';
+  if (/(total revenue|all.*revenue|overall|all time|revenue.*ever|total.*sales|total.*income)/.test(q)) return 'revenue_total';
+  if (/(revenue|sales|income|earning|how much|money made|payment collected)/.test(q))           return 'revenue_today';
+
+  // Reps / Agents
+  if (/(top rep|best rep|top agent|best agent|top seller|best seller|who.*sell.*most|most.*order)/.test(q)) return 'rep_top';
+  if (/(rep.*performance|agent.*performance|all rep|list.*rep|rep.*ranking|how.*rep.*doing|rep.*stat)/.test(q)) return 'rep_performance';
+  if (/(how many.*rep|how many.*agent|number.*rep|active rep)/.test(q))                         return 'rep_count';
+  // specific rep: "[name] orders" or "[name] performance" or "[name] revenue"
+  if (/(rep|agent|staff|performance|order|revenue|sell|sales|deliver)/.test(q) && extractName(q)) return 'rep_specific';
+
+  // Logistics BEFORE stock (critical order)
+  if (/(logistics|partner.*stock|stock.*partner|stock.*logistics|logistics.*stock|sent to|stock for|remit|qty sent|quantity sent|how much.*partner|partner.*how much|stock.*with)/.test(q)) return 'logistics';
+
+  // Stock / Inventory
+  if (/(stock|inventory|warehouse|how many.*left|remaining.*product|product.*remaining|low stock|out of stock|product level)/.test(q)) return 'stock';
+
+  // Deliveries
+  if (/(pending deliver|awaiting deliver|not.*deliver|undeliver|delivery.*pending|how many.*not deliver)/.test(q)) return 'deliveries_pending';
+  if (/(unremit|not remit|customer paid.*not|paid.*not remit|money.*not.*remit)/.test(q))       return 'deliveries_unremitted';
+  if (/(deliver|dispatch|shipment|assigned.*order)/.test(q))                                    return 'deliveries';
+
+  // Payments breakdown
+  if (/(payment method|how.*paid|cash.*vs|pos.*vs|transfer.*vs|bank.*vs|breakdown.*payment|payment.*breakdown)/.test(q)) return 'payments_breakdown';
+  if (/(payment|cash|transfer|pos|bank|collected|received)/.test(q))                            return 'payments';
+
+  // Orders by status
+  if (/(pending order|order.*pending|waiting.*confirm|not.*confirm|unconfirmed)/.test(q))       return 'orders_pending';
+  if (/(cancel|cancelled order|order.*cancel)/.test(q))                                         return 'orders_cancelled';
+  if (/(assigned order|order.*assigned)/.test(q))                                               return 'orders_assigned';
+  if (/(delivered.*paid|paid.*delivered|completed order|order.*complete|successful order)/.test(q)) return 'orders_delivered';
+  if (/(awaiting payment|delivered.*awaiting|not.*paid.*delivered|deliver.*not.*paid)/.test(q)) return 'orders_awaiting_payment';
+
+  // Specific date
+  if (/(yesterday|last (monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)|\d{1,2}[\/\-]\d{1,2}|\d{4}-\d{2}-\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/.test(q)) return 'orders_date';
+
+  // Summary / overview
+  if (/(summary|overview|dashboard|update|how.*business|business.*today|what.*happening|report)/.test(q)) return 'summary';
+
+  return 'summary';
+}
+
+// ── SMART SUPABASE FETCH BY INTENT ──
+// Each branch fetches ONLY the columns and rows needed — no excess data
 async function fetchByIntent(intent, q) {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
-  const day = now.getDay();
-  const diffToMon = day===0?-6:1-day;
-  const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
-  const weekStart = monday.toISOString();
-
-  // Helper: extract a YYYY-MM-DD date from the question if mentioned
-  function extractDate() {
-    const m = q.match(/(\d{4}-\d{2}-\d{2})/);
-    if (m) return m[1];
-    // yesterday
-    if (/yesterday/.test(q)) {
-      const y = new Date(now); y.setDate(y.getDate()-1);
-      return y.toISOString().split('T')[0];
-    }
-    // month name
-    const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-    for (const [k,v] of Object.entries(months)) {
-      const dm = q.match(new RegExp(`(\\d{1,2})\\s*${k}|(${k})\\s*(\\d{1,2})`));
-      if (dm) {
-        const dd = String(dm[1]||dm[3]).padStart(2,'0');
-        return `${now.getFullYear()}-${v}-${dd}`;
-      }
-    }
-    return null;
-  }
-
+  const today     = getTodayStr();
+  const weekStart = getWeekStart();
+  const monthStart= getMonthStart();
   let data = {};
 
+  // ── ORDERS TODAY ──
   if (intent === 'orders_today') {
-    const orders = await api(`orders?created_at=gte.${today}T00:00:00&select=id,status,total_price,customer_name,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
-    const active = (orders||[]).filter(o=>o.status!=='cancelled');
+    const rows = await api(`orders?created_at=gte.${today}T00:00:00&select=status,total_price,customer_name,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    const active = rows.filter(o=>o.status!=='cancelled');
     data = {
-      intent,
-      date: today,
-      orders_today_count: active.length,
-      pending: active.filter(o=>o.status==='pending').length,
+      intent, date: today,
+      total: active.length,
+      pending:  active.filter(o=>o.status==='pending').length,
       assigned: active.filter(o=>o.status==='assigned').length,
       delivered_paid: active.filter(o=>o.status==='delivered_payment_made').length,
       delivered_awaiting: active.filter(o=>o.status==='delivered_awaiting_payment').length,
-      cancelled: (orders||[]).filter(o=>o.status==='cancelled').length,
-      orders_list: active.map(o=>({ customer:o.customer_name, amount:parseFloat(o.total_price||0), status:o.status, rep:o.profiles?.full_name }))
+      cancelled: rows.filter(o=>o.status==='cancelled').length,
+      list: active.map(o=>({c:o.customer_name, a:parseFloat(o.total_price||0), s:o.status, r:o.profiles?.full_name}))
     };
   }
 
+  // ── ORDERS THIS WEEK ──
+  else if (intent === 'orders_week') {
+    const rows = await api(`orders?created_at=gte.${weekStart}&select=status,total_price,customer_name,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    const active = rows.filter(o=>o.status!=='cancelled');
+    data = {
+      intent, week_start: weekStart.split('T')[0],
+      total: active.length,
+      pending: active.filter(o=>o.status==='pending').length,
+      delivered_paid: active.filter(o=>o.status==='delivered_payment_made').length,
+      cancelled: rows.filter(o=>o.status==='cancelled').length,
+      list: active.slice(0,20).map(o=>({c:o.customer_name, a:parseFloat(o.total_price||0), s:o.status, r:o.profiles?.full_name}))
+    };
+  }
+
+  // ── ORDERS THIS MONTH ──
+  else if (intent === 'orders_month') {
+    const rows = await api(`orders?created_at=gte.${monthStart}&select=status,total_price&order=created_at.desc`).catch(()=>[]);
+    const active = rows.filter(o=>o.status!=='cancelled');
+    data = {
+      intent, month_start: monthStart.split('T')[0],
+      total: active.length,
+      pending: active.filter(o=>o.status==='pending').length,
+      delivered_paid: active.filter(o=>o.status==='delivered_payment_made').length,
+      cancelled: rows.filter(o=>o.status==='cancelled').length,
+      total_value: active.reduce((s,o)=>s+parseFloat(o.total_price||0),0)
+    };
+  }
+
+  // ── ORDERS TOTAL ALL TIME ──
+  else if (intent === 'orders_total') {
+    const rows = await api(`orders?select=status`).catch(()=>[]);
+    data = {
+      intent,
+      total: rows.filter(o=>o.status!=='cancelled').length,
+      pending: rows.filter(o=>o.status==='pending').length,
+      assigned: rows.filter(o=>o.status==='assigned').length,
+      delivered_paid: rows.filter(o=>o.status==='delivered_payment_made').length,
+      delivered_awaiting: rows.filter(o=>o.status==='delivered_awaiting_payment').length,
+      cancelled: rows.filter(o=>o.status==='cancelled').length
+    };
+  }
+
+  // ── REVENUE TODAY ──
   else if (intent === 'revenue_today') {
-    const payments = await api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]);
-    const total = (payments||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-    const byMethod = {};
-    (payments||[]).forEach(p=>{ const m=p.payment_method||'unknown'; byMethod[m]=(byMethod[m]||0)+parseFloat(p.amount_received||0); });
-    data = { intent, date: today, revenue_today: total, transactions_today: (payments||[]).length, by_payment_method: byMethod };
+    const rows = await api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]);
+    const byM = {}; rows.forEach(p=>{ const m=p.payment_method||'unknown'; byM[m]=(byM[m]||0)+parseFloat(p.amount_received||0); });
+    data = { intent, date: today, total: rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0), transactions: rows.length, by_method: byM };
   }
 
+  // ── REVENUE THIS WEEK ──
   else if (intent === 'revenue_week') {
-    const payments = await api(`payments?confirmed_at=gte.${weekStart}&select=amount_received,payment_method,confirmed_at`).catch(()=>[]);
-    const total = (payments||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-    data = { intent, week_start: weekStart.split('T')[0], revenue_this_week: total, transactions: (payments||[]).length };
+    const rows = await api(`payments?confirmed_at=gte.${weekStart}&select=amount_received,payment_method`).catch(()=>[]);
+    const byM = {}; rows.forEach(p=>{ const m=p.payment_method||'unknown'; byM[m]=(byM[m]||0)+parseFloat(p.amount_received||0); });
+    data = { intent, week_start: weekStart.split('T')[0], total: rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0), transactions: rows.length, by_method: byM };
   }
 
+  // ── REVENUE THIS MONTH ──
+  else if (intent === 'revenue_month') {
+    const rows = await api(`payments?confirmed_at=gte.${monthStart}&select=amount_received,payment_method`).catch(()=>[]);
+    data = { intent, month_start: monthStart.split('T')[0], total: rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0), transactions: rows.length };
+  }
+
+  // ── REVENUE TOTAL ALL TIME ──
   else if (intent === 'revenue_total') {
-    const payments = await api(`payments?select=amount_received,payment_method,confirmed_at&order=confirmed_at.desc`).catch(()=>[]);
-    const total = (payments||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-    const weekTotal = (payments||[]).filter(p=>p.confirmed_at>=weekStart).reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-    const todayTotal = (payments||[]).filter(p=>p.confirmed_at>=today+'T00:00:00').reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-    data = { intent, total_revenue: total, revenue_this_week: weekTotal, revenue_today: todayTotal, total_transactions: (payments||[]).length };
+    const [all, week, todayP] = await Promise.all([
+      api(`payments?select=amount_received`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${weekStart}&select=amount_received`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received`).catch(()=>[])
+    ]);
+    data = {
+      intent,
+      total_all_time: all.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      this_week: week.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      today: todayP.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      total_transactions: all.length
+    };
   }
 
+  // ── REP PERFORMANCE ALL ──
   else if (intent === 'rep_performance') {
     const [reps, orders] = await Promise.all([
       api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
-      api(`orders?select=rep_id,status,total_price,created_at&order=created_at.desc`).catch(()=>[])
+      api(`orders?select=rep_id,status,total_price`).catch(()=>[])
     ]);
-    const activeReps = (reps||[]).filter(r=>r.is_active);
-    const repMap = {};
-    activeReps.forEach(r=>{ repMap[r.id]={name:r.full_name,ref:r.ref_code,total_orders:0,delivered:0,pending:0,revenue:0}; });
-    (orders||[]).forEach(o=>{
-      if(repMap[o.rep_id]){
-        if(o.status!=='cancelled') repMap[o.rep_id].total_orders++;
-        if(o.status==='delivered_payment_made'){ repMap[o.rep_id].delivered++; repMap[o.rep_id].revenue+=parseFloat(o.total_price||0); }
-        if(o.status==='pending') repMap[o.rep_id].pending++;
-      }
+    const active = reps.filter(r=>r.is_active);
+    const map = {};
+    active.forEach(r=>{ map[r.id]={name:r.full_name,ref:r.ref_code,orders:0,delivered:0,pending:0,revenue:0}; });
+    orders.forEach(o=>{
+      if(!map[o.rep_id]||o.status==='cancelled') return;
+      map[o.rep_id].orders++;
+      if(o.status==='delivered_payment_made'){map[o.rep_id].delivered++;map[o.rep_id].revenue+=parseFloat(o.total_price||0);}
+      if(o.status==='pending') map[o.rep_id].pending++;
     });
-    data = {
-      intent,
-      total_active_reps: activeReps.length,
-      rep_performance: Object.values(repMap).sort((a,b)=>b.delivered-a.delivered)
-    };
+    data = { intent, total_reps: active.length, reps: Object.values(map).sort((a,b)=>b.delivered-a.delivered) };
   }
 
-  else if (intent === 'stock') {
-    const stock = await api(`stock?select=quantity,products(name,price,is_active)`).catch(()=>[]);
-    data = {
-      intent,
-      stock_items: (stock||[]).map(s=>({ product:s.products?.name, qty:s.quantity, unit_price:s.products?.price, active:s.products?.is_active }))
-                              .filter(s=>s.product)
-                              .sort((a,b)=>b.qty-a.qty)
-    };
+  // ── TOP REP ──
+  else if (intent === 'rep_top') {
+    const [reps, orders] = await Promise.all([
+      api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+      api(`orders?select=rep_id,status,total_price`).catch(()=>[])
+    ]);
+    const map = {};
+    reps.filter(r=>r.is_active).forEach(r=>{ map[r.id]={name:r.full_name,ref:r.ref_code,delivered:0,revenue:0,orders:0}; });
+    orders.forEach(o=>{
+      if(!map[o.rep_id]||o.status==='cancelled') return;
+      map[o.rep_id].orders++;
+      if(o.status==='delivered_payment_made'){map[o.rep_id].delivered++;map[o.rep_id].revenue+=parseFloat(o.total_price||0);}
+    });
+    const sorted = Object.values(map).sort((a,b)=>b.delivered-a.delivered);
+    data = { intent, top_rep: sorted[0]||null, top_3: sorted.slice(0,3) };
   }
 
+  // ── REP COUNT ──
+  else if (intent === 'rep_count') {
+    const reps = await api(`profiles?role=eq.rep&select=id,full_name,is_active`).catch(()=>[]);
+    data = { intent, total: reps.length, active: reps.filter(r=>r.is_active).length, inactive: reps.filter(r=>!r.is_active).length };
+  }
+
+  // ── SPECIFIC REP ──
+  else if (intent === 'rep_specific') {
+    const nameHint = extractName(q);
+    const [reps, orders] = await Promise.all([
+      api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+      api(`orders?select=rep_id,status,total_price,customer_name,created_at`).catch(()=>[])
+    ]);
+    const matched = reps.filter(r=>r.full_name.toLowerCase().includes(nameHint||''));
+    if (matched.length===0) {
+      data = { intent, error: `No rep found matching "${nameHint}"`, available_reps: reps.filter(r=>r.is_active).map(r=>r.full_name) };
+    } else {
+      const rep = matched[0];
+      const repOrders = orders.filter(o=>o.rep_id===rep.id&&o.status!=='cancelled');
+      const delivered = repOrders.filter(o=>o.status==='delivered_payment_made');
+      data = {
+        intent, rep_name: rep.full_name, ref: rep.ref_code, active: rep.is_active,
+        total_orders: repOrders.length,
+        delivered: delivered.length,
+        pending: repOrders.filter(o=>o.status==='pending').length,
+        assigned: repOrders.filter(o=>o.status==='assigned').length,
+        revenue: delivered.reduce((s,o)=>s+parseFloat(o.total_price||0),0),
+        recent_orders: repOrders.slice(0,10).map(o=>({date:o.created_at?.split('T')[0],customer:o.customer_name,status:o.status,amount:parseFloat(o.total_price||0)}))
+      };
+    }
+  }
+
+  // ── LOGISTICS PARTNER STOCK ──
   else if (intent === 'logistics') {
+    const nameHint = extractName(q);
     const [ls, deliveries] = await Promise.all([
       api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partners(name),products(name,price)`).catch(()=>[]),
       api(`deliveries?select=status,customer_paid,remitted_to_admin,logistics_partners(name)`).catch(()=>[])
     ]);
+    // Group stock by partner
     const byPartner = {};
-    (ls||[]).forEach(s=>{
-      const name = s.logistics_partners?.name||'Unknown';
-      if(!byPartner[name]) byPartner[name]=[];
-      byPartner[name].push({ product:s.products?.name, qty_sent:s.quantity_sent, qty_confirmed:s.quantity_confirmed, qty_remaining:s.quantity_remaining, confirmed:s.confirmed, sent_at:s.sent_at?.split('T')[0] });
+    ls.forEach(s=>{
+      const pname = s.logistics_partners?.name||'Unknown';
+      if(!byPartner[pname]) byPartner[pname]=[];
+      byPartner[pname].push({ product:s.products?.name, sent:s.quantity_sent, confirmed:s.quantity_confirmed, remaining:s.quantity_remaining, is_confirmed:s.confirmed, date:s.sent_at?.split('T')[0] });
     });
+    // Delivery stats per partner
+    const delivStats = {};
+    deliveries.forEach(d=>{
+      const pname = d.logistics_partners?.name||'Unknown';
+      if(!delivStats[pname]) delivStats[pname]={total:0,pending:0,unremitted:0};
+      delivStats[pname].total++;
+      if(d.status==='assigned') delivStats[pname].pending++;
+      if(d.customer_paid&&!d.remitted_to_admin) delivStats[pname].unremitted++;
+    });
+    // Filter by name if mentioned
+    const allNames = Object.keys(byPartner);
+    let focusStock = byPartner, focusDelivery = delivStats, queriedPartner = 'all';
+    if (nameHint) {
+      const match = allNames.filter(n=>n.toLowerCase().includes(nameHint));
+      if (match.length>0) {
+        queriedPartner = match[0];
+        focusStock = { [match[0]]: byPartner[match[0]] };
+        focusDelivery = match[0] in delivStats ? { [match[0]]: delivStats[match[0]] } : {};
+      }
+    }
     data = {
-      intent,
-      logistics_stock_by_partner: byPartner,
-      unremitted_deliveries: (deliveries||[]).filter(d=>d.customer_paid&&!d.remitted_to_admin).length
+      intent, queried_partner: queriedPartner, all_partner_names: allNames,
+      stock_by_partner: focusStock, delivery_stats: focusDelivery,
+      total_unremitted: deliveries.filter(d=>d.customer_paid&&!d.remitted_to_admin).length
     };
   }
 
-  else if (intent === 'deliveries' || intent === 'deliveries_pending') {
-    const deliveries = await api(`deliveries?select=status,assigned_at,remitted_to_admin,customer_paid,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
-    const list = intent==='deliveries_pending'
-      ? (deliveries||[]).filter(d=>d.status==='assigned')
-      : (deliveries||[]);
+  // ── WAREHOUSE STOCK ──
+  else if (intent === 'stock') {
+    const rows = await api(`stock?select=quantity,products(name,price,is_active)`).catch(()=>[]);
+    const items = rows.map(s=>({product:s.products?.name, qty:s.quantity, price:s.products?.price, active:s.products?.is_active})).filter(s=>s.product).sort((a,b)=>b.qty-a.qty);
     data = {
       intent,
-      total: list.length,
-      pending_delivery: (deliveries||[]).filter(d=>d.status==='assigned').length,
-      delivered: (deliveries||[]).filter(d=>d.status==='delivered').length,
-      customer_paid_not_remitted: (deliveries||[]).filter(d=>d.customer_paid&&!d.remitted_to_admin).length,
-      deliveries: list.slice(0,30).map(d=>({ date:d.assigned_at?.split('T')[0], status:d.status, partner:d.logistics_partners?.name, customer:d.orders?.customer_name, amount:parseFloat(d.orders?.total_price||0), rep:d.orders?.profiles?.full_name, customer_paid:d.customer_paid, remitted:d.remitted_to_admin }))
+      total_products: items.length,
+      out_of_stock: items.filter(i=>i.qty<=0).length,
+      low_stock: items.filter(i=>i.qty>0&&i.qty<=5).length,
+      items
     };
   }
 
+  // ── DELIVERIES PENDING ──
+  else if (intent === 'deliveries_pending') {
+    const rows = await api(`deliveries?status=eq.assigned&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    data = {
+      intent,
+      count: rows.length,
+      list: rows.slice(0,25).map(d=>({ date:d.assigned_at?.split('T')[0], partner:d.logistics_partners?.name, customer:d.orders?.customer_name, amount:parseFloat(d.orders?.total_price||0), rep:d.orders?.profiles?.full_name }))
+    };
+  }
+
+  // ── DELIVERIES UNREMITTED ──
+  else if (intent === 'deliveries_unremitted') {
+    const rows = await api(`deliveries?customer_paid=eq.true&remitted_to_admin=eq.false&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    data = {
+      intent,
+      count: rows.length,
+      total_value: rows.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0),
+      list: rows.slice(0,25).map(d=>({ date:d.assigned_at?.split('T')[0], partner:d.logistics_partners?.name, customer:d.orders?.customer_name, amount:parseFloat(d.orders?.total_price||0), rep:d.orders?.profiles?.full_name }))
+    };
+  }
+
+  // ── ALL DELIVERIES ──
+  else if (intent === 'deliveries') {
+    const rows = await api(`deliveries?select=status,assigned_at,customer_paid,remitted_to_admin,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    data = {
+      intent,
+      total: rows.length,
+      pending: rows.filter(d=>d.status==='assigned').length,
+      delivered: rows.filter(d=>d.status==='delivered').length,
+      customer_paid_not_remitted: rows.filter(d=>d.customer_paid&&!d.remitted_to_admin).length,
+      recent: rows.slice(0,20).map(d=>({ date:d.assigned_at?.split('T')[0], status:d.status, partner:d.logistics_partners?.name, customer:d.orders?.customer_name, amount:parseFloat(d.orders?.total_price||0), paid:d.customer_paid, remitted:d.remitted_to_admin }))
+    };
+  }
+
+  // ── PAYMENT METHOD BREAKDOWN ──
+  else if (intent === 'payments_breakdown') {
+    const rows = await api(`payments?select=amount_received,payment_method`).catch(()=>[]);
+    const byM = {}; rows.forEach(p=>{ const m=p.payment_method||'unknown'; byM[m]=(byM[m]||0)+parseFloat(p.amount_received||0); });
+    data = { intent, total: rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0), by_method: byM, transactions: rows.length };
+  }
+
+  // ── PAYMENTS GENERAL ──
   else if (intent === 'payments') {
-    const payments = await api(`payments?select=amount_received,payment_method,confirmed_at&order=confirmed_at.desc`).catch(()=>[]);
-    const byMethod = {};
-    (payments||[]).forEach(p=>{ const m=p.payment_method||'unknown'; byMethod[m]=(byMethod[m]||0)+parseFloat(p.amount_received||0); });
+    const [todayP, weekP] = await Promise.all([
+      api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${weekStart}&select=amount_received`).catch(()=>[])
+    ]);
+    const byM = {}; todayP.forEach(p=>{ const m=p.payment_method||'unknown'; byM[m]=(byM[m]||0)+parseFloat(p.amount_received||0); });
     data = {
       intent,
-      total_collected: (payments||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
-      total_transactions: (payments||[]).length,
-      by_method: byMethod,
-      recent_10: (payments||[]).slice(0,10).map(p=>({ date:p.confirmed_at?.split('T')[0], amount:parseFloat(p.amount_received||0), method:p.payment_method }))
+      today: todayP.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      today_transactions: todayP.length,
+      today_by_method: byM,
+      this_week: weekP.reduce((s,p)=>s+parseFloat(p.amount_received||0),0)
     };
   }
 
+  // ── ORDERS PENDING ──
   else if (intent === 'orders_pending') {
-    const orders = await api(`orders?status=eq.pending&select=id,created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
-    data = {
-      intent,
-      pending_count: (orders||[]).length,
-      orders: (orders||[]).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name }))
-    };
+    const rows = await api(`orders?status=eq.pending&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    data = { intent, count: rows.length, list: rows.slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name })) };
   }
 
+  // ── ORDERS CANCELLED ──
   else if (intent === 'orders_cancelled') {
-    const orders = await api(`orders?status=eq.cancelled&select=id,created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
-    data = {
-      intent,
-      cancelled_count: (orders||[]).length,
-      orders: (orders||[]).slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name }))
-    };
+    const rows = await api(`orders?status=eq.cancelled&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    data = { intent, count: rows.length, list: rows.slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name })) };
   }
 
+  // ── ORDERS ASSIGNED ──
+  else if (intent === 'orders_assigned') {
+    const rows = await api(`orders?status=eq.assigned&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    data = { intent, count: rows.length, list: rows.slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name })) };
+  }
+
+  // ── ORDERS DELIVERED & PAID ──
+  else if (intent === 'orders_delivered') {
+    const rows = await api(`orders?status=eq.delivered_payment_made&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    data = { intent, count: rows.length, total_value: rows.reduce((s,o)=>s+parseFloat(o.total_price||0),0), list: rows.slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name })) };
+  }
+
+  // ── ORDERS DELIVERED AWAITING PAYMENT ──
+  else if (intent === 'orders_awaiting_payment') {
+    const rows = await api(`orders?status=eq.delivered_awaiting_payment&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    data = { intent, count: rows.length, total_value: rows.reduce((s,o)=>s+parseFloat(o.total_price||0),0), list: rows.slice(0,20).map(o=>({ date:o.created_at?.split('T')[0], customer:o.customer_name, amount:parseFloat(o.total_price||0), rep:o.profiles?.full_name })) };
+  }
+
+  // ── SPECIFIC DATE ──
   else if (intent === 'orders_date') {
-    const dateStr = extractDate();
+    const dateStr = extractDateFromQ(q);
     if (dateStr) {
-      const orders = await api(`orders?created_at=gte.${dateStr}T00:00:00&created_at=lt.${dateStr}T23:59:59&select=id,status,total_price,customer_name,created_at,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
-      const payments = await api(`payments?confirmed_at=gte.${dateStr}T00:00:00&confirmed_at=lt.${dateStr}T23:59:59&select=amount_received,payment_method`).catch(()=>[]);
+      const [orders, payments] = await Promise.all([
+        api(`orders?created_at=gte.${dateStr}T00:00:00&created_at=lte.${dateStr}T23:59:59&select=status,total_price,customer_name,profiles(full_name)&order=created_at.desc`).catch(()=>[]),
+        api(`payments?confirmed_at=gte.${dateStr}T00:00:00&confirmed_at=lte.${dateStr}T23:59:59&select=amount_received,payment_method`).catch(()=>[])
+      ]);
+      const active = orders.filter(o=>o.status!=='cancelled');
+      const byM = {}; payments.forEach(p=>{ const m=p.payment_method||'unknown'; byM[m]=(byM[m]||0)+parseFloat(p.amount_received||0); });
       data = {
         intent, queried_date: dateStr,
-        orders_count: (orders||[]).filter(o=>o.status!=='cancelled').length,
-        revenue: (payments||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
-        orders: (orders||[]).map(o=>({ customer:o.customer_name, amount:parseFloat(o.total_price||0), status:o.status, rep:o.profiles?.full_name }))
+        orders: active.length,
+        cancelled: orders.filter(o=>o.status==='cancelled').length,
+        revenue: payments.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+        payment_transactions: payments.length, by_method: byM,
+        order_list: active.map(o=>({ customer:o.customer_name, amount:parseFloat(o.total_price||0), status:o.status, rep:o.profiles?.full_name }))
       };
     } else {
-      // fallback to summary if no date extracted
-      intent = 'summary';
+      intent = 'summary'; // fallback if date not parseable
     }
   }
 
-  // SUMMARY — default: only aggregate counts, no big arrays
+  // ── SUMMARY (default) ──
   if (intent === 'summary' || Object.keys(data).length === 0) {
-    const [ordersToday, paymentsToday, ordersAll, deliveries, paymentsAll] = await Promise.all([
+    const [oToday, pToday, oAll, deliv, pWeek] = await Promise.all([
       api(`orders?created_at=gte.${today}T00:00:00&select=status`).catch(()=>[]),
       api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received`).catch(()=>[]),
       api(`orders?select=status`).catch(()=>[]),
       api(`deliveries?select=status,customer_paid,remitted_to_admin`).catch(()=>[]),
-      api(`payments?confirmed_at=gte.${weekStart}&select=amount_received`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${weekStart}&select=amount_received`).catch(()=>[])
     ]);
     data = {
-      intent: 'summary',
-      today,
-      orders_today: (ordersToday||[]).filter(o=>o.status!=='cancelled').length,
-      revenue_today: (paymentsToday||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
-      revenue_this_week: (paymentsAll||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
-      total_orders: (ordersAll||[]).filter(o=>o.status!=='cancelled').length,
-      pending_orders: (ordersAll||[]).filter(o=>o.status==='pending').length,
-      assigned_orders: (ordersAll||[]).filter(o=>o.status==='assigned').length,
-      delivered_paid: (ordersAll||[]).filter(o=>o.status==='delivered_payment_made').length,
-      delivered_awaiting: (ordersAll||[]).filter(o=>o.status==='delivered_awaiting_payment').length,
-      cancelled_orders: (ordersAll||[]).filter(o=>o.status==='cancelled').length,
-      pending_deliveries: (deliveries||[]).filter(d=>d.status==='assigned').length,
-      unremitted: (deliveries||[]).filter(d=>d.customer_paid&&!d.remitted_to_admin).length,
+      intent: 'summary', today,
+      orders_today:      oToday.filter(o=>o.status!=='cancelled').length,
+      revenue_today:     pToday.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      revenue_this_week: pWeek.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      total_orders:      oAll.filter(o=>o.status!=='cancelled').length,
+      pending:           oAll.filter(o=>o.status==='pending').length,
+      assigned:          oAll.filter(o=>o.status==='assigned').length,
+      delivered_paid:    oAll.filter(o=>o.status==='delivered_payment_made').length,
+      delivered_awaiting:oAll.filter(o=>o.status==='delivered_awaiting_payment').length,
+      cancelled:         oAll.filter(o=>o.status==='cancelled').length,
+      pending_deliveries:deliv.filter(d=>d.status==='assigned').length,
+      unremitted:        deliv.filter(d=>d.customer_paid&&!d.remitted_to_admin).length
     };
   }
 
   return data;
 }
 
-// ── MAIN SEND FUNCTION ──
+// ── SYSTEM PROMPT BUILDER — tiny, focused, no fluff ──
+function buildPrompt(intent, context, todayLabel) {
+  const base = `Business assistant for LivingWell (Nigeria). Today: ${todayLabel}. Currency: ₦ (Naira). Format amounts as ₦X,XXX,XXX. Bold key figures with **. Be concise, give exact numbers from the data only.`;
+
+  const hints = {
+    logistics:            `Focus on the 'queried_partner'. Show stock per product (sent/confirmed/remaining). If partner not in data, say so and list 'all_partner_names'.`,
+    rep_performance:      `Show ranked list of all reps with orders, deliveries, and revenue each.`,
+    rep_top:              `State the #1 rep clearly with their stats, then briefly mention top 3.`,
+    rep_specific:         `Show this rep's full stats: orders, deliveries, pending, revenue, recent orders.`,
+    stock:                `List all products with quantities. Flag low stock (≤5) and out of stock (0).`,
+    orders_date:          `Answer specifically for the queried_date. Give order count, revenue, and list.`,
+    deliveries_unremitted:`State the count and total value of unremitted payments. List the cases.`,
+    payments_breakdown:   `Show total collected and exact breakdown by payment method with amounts.`,
+    summary:              `Give a quick business overview: orders today, revenue today, week revenue, pending orders, pending deliveries, unremitted.`
+  };
+
+  return `${base}\n${hints[intent]||''}\n\nData:\n${JSON.stringify(context)}`;
+}
+
+// ── MAIN SEND ──
 async function sendChatMessage() {
   if (chatBusy) return;
   const input = document.getElementById('chat-input');
@@ -6587,24 +6847,11 @@ async function sendChatMessage() {
   chatBusy=true; showTyping();
 
   try {
-    const intent = detectIntent(text);
-    const context = await fetchByIntent(intent, text.toLowerCase());
+    const q = text.toLowerCase();
+    const intent = detectIntent(q);
+    const context = await fetchByIntent(intent, q);
     const todayLabel = new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-
-    const systemPrompt = `You are a precise business assistant for LivingWell, a Nigerian health/wellness product company. Today is ${todayLabel}. Currency is Nigerian Naira (₦).
-
-You have been given ONLY the data relevant to this specific question (intent: ${intent}). Do not ask for more data — answer directly from what is provided.
-
-Focused live data:
-${JSON.stringify(context, null, 2)}
-
-Rules:
-- Use **bold** for all key numbers and names.
-- Format all amounts as ₦X,XXX,XXX (e.g. ₦1,250,000).
-- Be concise and direct. Give exact figures.
-- If a breakdown is available in the data, include it.
-- Never invent or estimate figures not in the data.
-- If data is empty, say so clearly.`;
+    const systemPrompt = buildPrompt(intent, context, todayLabel);
 
     const res = await fetch(GROQ_URL, {
       method:'POST',
@@ -6612,7 +6859,7 @@ Rules:
       body:JSON.stringify({
         model: GROQ_MODEL,
         messages:[{role:'system',content:systemPrompt},{role:'user',content:text}],
-        max_tokens: 500,
+        max_tokens: 450,
         temperature: 0.1
       })
     });
@@ -6620,13 +6867,10 @@ Rules:
     hideTyping();
 
     if (!res.ok) {
-      const errMsg = data?.error?.message||'API error';
-      appendBotMessage('⚠️ Error: '+errMsg);
+      appendBotMessage('⚠️ Error: '+(data?.error?.message||'API error'));
       chatBusy=false; return;
     }
-
-    const reply = data?.choices?.[0]?.message?.content||'Sorry, I could not generate a response.';
-    appendBotMessage(reply);
+    appendBotMessage(data?.choices?.[0]?.message?.content||'No response.');
   } catch(e) {
     hideTyping();
     appendBotMessage('⚠️ Something went wrong: '+e.message);
