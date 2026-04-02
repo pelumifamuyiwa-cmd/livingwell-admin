@@ -2628,6 +2628,26 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 const SUPABASE_URL = 'https://azjwjswjecnacddcozuu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTEyOTcsImV4cCI6MjA4ODYyNzI5N30.jojgbxPCkUC_czk19oeYF3b6FdbCQfpzzs9o8QdaXMs';
 const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6andqc3dqZWNuYWNkZGNvenV1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzA1MTI5NywiZXhwIjoyMDg4NjI3Mjk3fQ.nleDthPd_ek7OQKuZU6E6di7EaOVoNrt9Q8SAeDdGOQ';
+
+// ── TIMEZONE HELPER — always use WAT (UTC+1) regardless of device timezone ──
+function watNow() {
+  // Returns a Date object adjusted to West Africa Time (UTC+1)
+  return new Date(Date.now() + 60 * 60 * 1000);
+}
+function watToday() {
+  // Returns today's date string YYYY-MM-DD in WAT — consistent across all devices
+  return watNow().toISOString().split('T')[0];
+}
+function watMonday() {
+  // Returns the start of the current week (Monday 00:00 WAT) as ISO string
+  const now = watNow();
+  const day = now.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon);
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString();
+}
 const EDGE_FN = 'https://azjwjswjecnacddcozuu.supabase.co/functions/v1/manage-users';
 
 const headers = {
@@ -6329,9 +6349,8 @@ function sendChip(el) { document.getElementById('chat-input').value=el.textConte
 async function fetchBusinessContext(question) {
   const q = (question||'').toLowerCase();
 
-  // Match dashboard exactly: use local date string in WAT (UTC+1)
-  const nowWAT = new Date(Date.now() + 60*60*1000); // shift by +1hr
-  const today = nowWAT.toISOString().split('T')[0];
+  // Match dashboard EXACTLY — uses raw UTC date, same as loadDashboard()
+  const today = new Date().toISOString().split('T')[0];
   const now = new Date();
   const day = now.getDay();
   const diffToMon = day===0?-6:1-day;
@@ -6344,21 +6363,19 @@ async function fetchBusinessContext(question) {
   const needsPayDetail   = /(payment|cash|transfer|pos|method|collected|remit)/.test(q);
   const needsStockDetail = /(stock|inventory|product|quantity|warehouse|remaining|how much stock)/.test(q);
 
-  // Fetch today's orders & payments the same way the dashboard does — filtered server-side
   const [
     ordersToday, paymentsToday,
     ordersAll, reps,
     logistics_stock, deliveries, payments, stock
   ] = await Promise.all([
-    // Dashboard-matching queries (server-side filtered by today)
+    // Exact same query as dashboard loadDashboard()
     api(`orders?created_at=gte.${today}T00:00:00&select=id,status,total_price,customer_name,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
-    api(`payments?created_at=gte.${today}T00:00:00&select=amount_received,amount,payment_method`).catch(()=>[]),
+    // Dashboard uses confirmed_at for payments, not created_at
+    api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]),
 
-    // All orders for totals/history
     api(`orders?select=id,status,total_price,created_at,customer_name,rep_id,profiles(full_name,ref_code)&order=created_at.desc`).catch(()=>[]),
     api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
 
-    // Conditional fetches
     needsLogistics
       ? api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)`).catch(()=>[])
       : Promise.resolve([]),
@@ -6366,15 +6383,15 @@ async function fetchBusinessContext(question) {
       ? api(`deliveries?select=status,assigned_at,remitted_to_admin,customer_paid,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[])
       : api(`deliveries?select=status,customer_paid,remitted_to_admin`).catch(()=>[]),
     needsPayDetail
-      ? api(`payments?select=amount_received,amount,payment_method,created_at&order=created_at.desc`).catch(()=>[])
-      : api(`payments?select=amount_received,amount,created_at&order=created_at.desc`).catch(()=>[]),
+      ? api(`payments?select=amount_received,payment_method,confirmed_at&order=confirmed_at.desc`).catch(()=>[])
+      : api(`payments?select=amount_received,confirmed_at&order=confirmed_at.desc`).catch(()=>[]),
     needsStockDetail
       ? api(`stock?select=quantity,products(name,price,is_active)`).catch(()=>[])
       : Promise.resolve([]),
   ]);
 
-  // Revenue today: match dashboard (uses amount_received from payments table)
-  const revenueToday = (paymentsToday||[]).reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0);
+  // Revenue today — matches dashboard: sum amount_received from payments filtered by confirmed_at
+  const revenueToday = (paymentsToday||[]).reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
 
   const weekOrders = (ordersAll||[]).filter(o=>o.created_at>=weekStart);
   const activeReps = (reps||[]).filter(r=>r.is_active);
@@ -6408,20 +6425,20 @@ async function fetchBusinessContext(question) {
     today, week_start: weekStart,
 
     summary: {
-      // Orders — fetched same way as dashboard stat card
-      orders_today: (ordersToday||[]).length,
-      orders_this_week: weekOrders.length,
-      total_orders: (ordersAll||[]).length,
+      // Dashboard counts non-cancelled orders only
+      orders_today: (ordersToday||[]).filter(o=>o.status!=='cancelled').length,
+      orders_this_week: weekOrders.filter(o=>o.status!=='cancelled').length,
+      total_orders: (ordersAll||[]).filter(o=>o.status!=='cancelled').length,
       pending_orders: (ordersAll||[]).filter(o=>o.status==='pending').length,
       assigned_orders: (ordersAll||[]).filter(o=>o.status==='assigned').length,
       delivered_paid: (ordersAll||[]).filter(o=>o.status==='delivered_payment_made').length,
       delivered_awaiting_payment: (ordersAll||[]).filter(o=>o.status==='delivered_awaiting_payment').length,
       cancelled_orders: (ordersAll||[]).filter(o=>o.status==='cancelled').length,
 
-      // Revenue — uses payments table same as dashboard
+      // Revenue from payments table using amount_received — matches dashboard
       revenue_today: revenueToday,
-      revenue_this_week: allPayments.filter(p=>p.created_at>=weekStart).reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0),
-      total_revenue: allPayments.reduce((s,p)=>s+parseFloat(p.amount_received||p.amount||0),0),
+      revenue_this_week: allPayments.filter(p=>p.confirmed_at>=weekStart).reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
+      total_revenue: allPayments.reduce((s,p)=>s+parseFloat(p.amount_received||0),0),
 
       total_active_reps: activeReps.length,
       pending_deliveries: (deliveries||[]).filter(d=>d.status==='assigned').length,
