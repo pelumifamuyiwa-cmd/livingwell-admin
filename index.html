@@ -395,6 +395,16 @@ select.form-input option {
   cursor: default;
 }
 
+@media (max-width: 768px) {
+  .stat-card { padding: 10px 12px; border-radius: 12px; }
+  .stat-icon-wrap { width: 24px; height: 24px; border-radius: 7px; margin-bottom: 7px; }
+  .stat-icon-wrap svg { width: 11px; height: 11px; }
+  .stat-label { font-size: 0.55rem; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .stat-value { font-size: 1rem; margin-bottom: 2px; }
+  .stat-sub { font-size: 0.6rem; }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+}
+
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
@@ -587,6 +597,35 @@ select.form-input option {
 
 /* ── TABLE ── */
 .table-wrap { overflow-x: auto; }
+
+@media (max-width: 768px) {
+  /* Recent orders — hide Rep column, keep key info visible */
+  #recent-orders-body tr td:nth-child(3),
+  #recent-orders-body + thead th:nth-child(3),
+  .table-wrap thead th:nth-child(3) { display: none; }
+  #recent-orders-body td:nth-child(3) { display: none; }
+
+  /* Make recent orders table fit without scrolling */
+  #page-dashboard .table-wrap { overflow-x: hidden; }
+  #page-dashboard .table-wrap table { table-layout: fixed; width: 100%; }
+  #page-dashboard .table-wrap table th,
+  #page-dashboard .table-wrap table td { 
+    white-space: normal; 
+    word-break: break-word;
+    font-size: 0.72rem;
+    padding: 8px 6px;
+  }
+  #page-dashboard .table-wrap table th:nth-child(1),
+  #page-dashboard .table-wrap table td:nth-child(1) { width: 28%; }
+  #page-dashboard .table-wrap table th:nth-child(2),
+  #page-dashboard .table-wrap table td:nth-child(2) { width: 28%; }
+  #page-dashboard .table-wrap table th:nth-child(3),
+  #page-dashboard .table-wrap table td:nth-child(3) { display: none; }
+  #page-dashboard .table-wrap table th:nth-child(4),
+  #page-dashboard .table-wrap table td:nth-child(4) { width: 24%; }
+  #page-dashboard .table-wrap table th:nth-child(5),
+  #page-dashboard .table-wrap table td:nth-child(5) { width: 20%; }
+}
 
 table { width: 100%; border-collapse: collapse; }
 
@@ -1348,15 +1387,21 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <button class="btn btn-ghost btn-sm" onclick="showPage('deliveries');setTimeout(()=>{const sel=document.querySelector('.filter-select');if(sel){sel.value='remittance_cancelled';filterDeliveriesByStatus('remittance_cancelled');}},300);" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber);">View Affected →</button>
       </div>
 
-      <!-- Paid Reverted Alert Banner -->
-      <div id="paid-reverted-alert" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:14px;padding:14px 20px;margin-bottom:20px;align-items:center;gap:12px;flex-wrap:wrap;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" width="20" height="20" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <div style="flex:1;">
-          <div style="font-size:0.85rem;font-weight:700;color:var(--amber);">&#8629; Delivery Paid Status Reverted by Logistics</div>
-          <div id="paid-reverted-alert-text" style="font-size:0.78rem;color:var(--text2);margin-top:2px;"></div>
-          <div style="font-size:0.72rem;color:var(--text3);margin-top:3px;">Payment record removed and stock restored automatically. Delivery is back to Pending.</div>
+      <!-- Paid Reverted Alert — collapsed pill, click to expand -->
+      <div id="paid-reverted-alert" style="display:none;margin-bottom:20px;">
+        <div onclick="togglePaidRevertedAlert()" style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35);border-radius:30px;padding:6px 14px 6px 10px;cursor:pointer;transition:background 0.2s;" title="Click to see reverted payment details">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" width="16" height="16" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span id="paid-reverted-pill-label" style="font-size:0.78rem;font-weight:700;color:var(--amber);"></span>
+          <svg id="paid-reverted-chevron" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" width="12" height="12" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="showPage('deliveries');setTimeout(()=>{const sel=document.querySelector('.filter-select');if(sel){sel.value='paid_reverted';filterDeliveriesByStatus('paid_reverted');}},300);" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber);">View Affected &#8594;</button>
+        <div id="paid-reverted-panel" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:14px;padding:14px 20px;margin-top:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--amber);">&#8629; Delivery Paid Status Reverted by Logistics</div>
+            <button class="btn btn-ghost btn-sm" onclick="showPage('deliveries');setTimeout(()=>{const sel=document.querySelector('.filter-select');if(sel){sel.value='paid_reverted';filterDeliveriesByStatus('paid_reverted');}},300);" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber);">View Affected &#8594;</button>
+          </div>
+          <div id="paid-reverted-alert-text" style="font-size:0.78rem;color:var(--text2);line-height:1.7;"></div>
+          <div style="font-size:0.72rem;color:var(--text3);margin-top:6px;">Payment record removed and stock restored automatically. Delivery is back to Pending.</div>
+        </div>
       </div>
 
       <div class="two-col">
@@ -2828,6 +2873,15 @@ function toggleLowStockAlert() {
   if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
 }
 
+function togglePaidRevertedAlert() {
+  const panel   = document.getElementById('paid-reverted-panel');
+  const chevron = document.getElementById('paid-reverted-chevron');
+  if (!panel) return;
+  const open = panel.style.display === 'block';
+  panel.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
 // ── API HELPER ──
 async function api(path, method = 'GET', body = null, extraHeaders = {}) {
   // Use SERVICE_KEY for all write operations so any admin (owner or manager)
@@ -2976,10 +3030,12 @@ async function loadDashboard() {
         `deliveries?paid_reverted=eq.true&select=id,paid_reverted_at,logistics_partners(name),orders(customer_name,total_price)&order=paid_reverted_at.desc&limit=10`
       ) || [];
       const alertEl = document.getElementById('paid-reverted-alert');
+      const prPill  = document.getElementById('paid-reverted-pill-label');
       const textEl  = document.getElementById('paid-reverted-alert-text');
       if (alertEl && textEl) {
         if (reverted.length > 0) {
-          alertEl.style.display = 'flex';
+          alertEl.style.display = 'block';
+          if (prPill) prPill.textContent = `${reverted.length} payment${reverted.length>1?'s':''} reverted`;
           const lines = reverted.map(d => {
             const partner  = d.logistics_partners?.name || 'Logistics';
             const customer = d.orders?.customer_name || 'Unknown';
