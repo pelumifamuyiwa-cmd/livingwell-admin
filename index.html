@@ -6289,9 +6289,11 @@ function closeWeeklyPerf() {
 </div>
 
 <script>
-// ── CHAT ENGINE v5: Zero-Token, Pure Supabase, Direct Answer ──
+// ── CHAT ENGINE v6: Smart Hybrid — JS fetches precise data, Groq thinks on small context ──
+// Groq key lives in Supabase Edge Function secret — never exposed in this file
 let chatOpen = false;
 let chatBusy = false;
+const CHAT_FN = 'https://azjwjswjecnacddcozuu.supabase.co/functions/v1/chat';
 
 // ── UI ──
 function toggleChat() {
@@ -6301,11 +6303,11 @@ function toggleChat() {
   if (chatOpen && document.getElementById('chat-messages').children.length === 0) initChat();
 }
 function initChat() {
-  appendBotMessage(`👋 Hi! Ask me anything about your business:\n\n• "orders today" / "orders this week"\n• "revenue today" / "revenue this week" / "total revenue"\n• "rep performance" / "top rep" / "how is [name] doing"\n• "stock levels"\n• "[partner name] logistics stock"\n• "pending orders" / "cancelled orders"\n• "pending deliveries" / "unremitted payments"\n• "payment breakdown"\n• "orders on 3rd April" / "yesterday orders"\n• "summary" / "overview"`);
+  appendBotMessage('👋 Hi! Ask me anything about LivingWell:\n\n• Orders today / this week / this month\n• Revenue today / week / month / total\n• Top rep / rep performance / "how is [name] doing"\n• Stock levels\n• "[partner] logistics stock" e.g. "Nancy logistics stock"\n• Pending / cancelled / assigned orders\n• Pending deliveries / unremitted payments\n• Payment breakdown\n• "orders on 3rd April" or "yesterday orders"');
 }
 function appendBotMessage(text) {
   const msgs = document.getElementById('chat-messages');
-  const div = document.createElement('div');
+  const div  = document.createElement('div');
   div.className = 'chat-msg bot';
   div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble">${formatChatText(text)}</div>`;
   msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
@@ -6320,577 +6322,304 @@ function appendUserMessage(text) {
 }
 function showTyping() {
   const msgs = document.getElementById('chat-messages');
-  const div = document.createElement('div');
+  const div  = document.createElement('div');
   div.className = 'chat-msg bot chat-typing'; div.id = 'chat-typing-indicator';
   div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
   msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
-function hideTyping() { document.getElementById('chat-typing-indicator')?.remove(); }
-function formatChatText(t) {
-  return escapeHtml(t)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
-}
+function hideTyping()  { document.getElementById('chat-typing-indicator')?.remove(); }
+function formatChatText(t) { return escapeHtml(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>'); }
 function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function autoResizeChatInput(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,90)+'px'; }
 function chatKeyDown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();} }
-function sendChip(el) { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
+function sendChip(el)  { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
 
-// ── FORMAT HELPERS ──
-const fmt  = n => '₦' + parseFloat(n||0).toLocaleString('en-NG', {minimumFractionDigits:0, maximumFractionDigits:0});
-const cap  = s => (s||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-const date = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
-
-// ── DATE UTILITIES ──
-function getToday()     { return new Date().toISOString().split('T')[0]; }
-function getWeekStart() {
-  const n=new Date(), d=n.getDay(), diff=d===0?-6:1-d;
-  const m=new Date(n); m.setDate(n.getDate()+diff); m.setHours(0,0,0,0);
-  return m.toISOString().split('T')[0];
-}
-function getMonthStart() {
-  const n=new Date();
-  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-}
+// ── DATE HELPERS ──
+const getToday      = () => new Date().toISOString().split('T')[0];
+const getWeekStart  = () => { const n=new Date(),d=n.getDay(),diff=d===0?-6:1-d,m=new Date(n); m.setDate(n.getDate()+diff); m.setHours(0,0,0,0); return m.toISOString().split('T')[0]; };
+const getMonthStart = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`; };
 function extractDate(q) {
   const iso=q.match(/(\d{4}-\d{2}-\d{2})/); if(iso) return iso[1];
   if(/yesterday/.test(q)){const y=new Date();y.setDate(y.getDate()-1);return y.toISOString().split('T')[0];}
-  const dayNames={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0,
-                  mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0};
-  for(const[nm,num] of Object.entries(dayNames)){
-    if(q.includes('last '+nm)){
-      const n=new Date(),cur=n.getDay();let diff=cur-num;if(diff<=0)diff+=7;
-      const d=new Date(n);d.setDate(n.getDate()-diff);return d.toISOString().split('T')[0];
-    }
+  const dayMap={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0};
+  for(const[nm,num] of Object.entries(dayMap)){
+    if(q.includes('last '+nm)){const n=new Date(),cur=n.getDay();let diff=cur-num;if(diff<=0)diff+=7;const d=new Date(n);d.setDate(n.getDate()-diff);return d.toISOString().split('T')[0];}
   }
-  const mths={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
-    july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
-    jan:'01',feb:'02',mar:'03',apr:'04',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  const mths={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',jan:'01',feb:'02',mar:'03',apr:'04',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
   for(const[k,v] of Object.entries(mths)){
     const re=new RegExp(`(\\d{1,2})(?:st|nd|rd|th)?\\s*${k}|${k}\\s*(\\d{1,2})(?:st|nd|rd|th)?`,'i');
-    const m=q.match(re);
-    if(m){const dd=String(m[1]||m[2]).padStart(2,'0');return `${new Date().getFullYear()}-${v}-${dd}`;}
+    const m=q.match(re);if(m){const dd=String(m[1]||m[2]).padStart(2,'0');return `${new Date().getFullYear()}-${v}-${dd}`;}
   }
   return null;
 }
 function extractName(q) {
-  const noise=/\b(stock|logistics|partner|how|much|remaining|sent|inventory|for|the|of|show|me|what|is|check|orders?|revenue|sales|delivery|deliveries|payments?|rep|agent|performance|ranking|top|best|total|today|week|month|this|last|all|give|tell|my|our|about|did|does|has|have|been|are|was|were|doing|her|his|their|summary|overview|update)\b/gi;
-  return q.replace(noise,'').replace(/\s+/g,' ').trim().split(' ').find(w=>w.length>=3 && !/^\d/.test(w))?.toLowerCase() || null;
+  const noise=/\b(stock|logistics|partner|how|much|remaining|sent|for|the|of|show|me|what|is|check|orders?|revenue|sales|delivery|deliveries|payments?|rep|agent|performance|ranking|top|best|total|today|week|month|this|last|all|give|tell|about|did|does|has|have|been|are|was|were|doing|summary|overview|update|report|business)\b/gi;
+  const words=q.replace(noise,'').replace(/\s+/g,' ').trim().split(' ').filter(w=>w.length>=3&&!/^\d/.test(w));
+  return words[0]?.toLowerCase()||null;
 }
 
 // ── INTENT DETECTION ──
 function detectIntent(q) {
-  // Specific date first
-  if (extractDate(q)) return 'date';
-
-  if (/(order|sale).*(today|so far)/i.test(q) || /today.*(order|sale)/i.test(q))       return 'orders_today';
-  if (/(order|sale).*(this week|week)/i.test(q) || /(week).*(order|sale)/i.test(q))    return 'orders_week';
-  if (/(order|sale).*(this month|month)/i.test(q) || /(month).*(order|sale)/i.test(q)) return 'orders_month';
-  if (/(total order|all.*order|all.?time.*order|order.*all.?time)/i.test(q))           return 'orders_total';
-
-  if (/(revenue|income|earning|money|sales?|how much).*(today)/i.test(q) || /today.*(revenue|income|earning|money|how much)/i.test(q)) return 'revenue_today';
-  if (/(revenue|income|earning|money|how much).*(this week|week)/i.test(q))            return 'revenue_week';
-  if (/(revenue|income|earning|money|how much).*(this month|month)/i.test(q))          return 'revenue_month';
-  if (/(total revenue|all.*revenue|all.?time|overall revenue|total.*earn|total.*income)/i.test(q)) return 'revenue_total';
-  if (/(revenue|income|earning|how much|money made|payment collected)/i.test(q))        return 'revenue_today';
-
-  if (/(top rep|best rep|top agent|best agent|top seller|who.*most|best.*perform)/i.test(q)) return 'rep_top';
-  if (/(rep.*performance|all rep|list.*rep|rep.*rank|how.*rep.*doing|rep.*stat|agent.*perform)/i.test(q)) return 'rep_all';
-  if (/(how many rep|number.*rep|count.*rep|active rep)/i.test(q))                      return 'rep_count';
-
-  // Logistics BEFORE stock
-  if (/(logistics|partner.*stock|stock.*partner|stock.*with|sent to|stock for|remit.*partner)/i.test(q)) return 'logistics';
-
-  if (/(stock|inventory|warehouse|product.*level|how many.*left|remaining.*product|out of stock|low stock)/i.test(q)) return 'stock';
-
-  if (/(unremit|not remit|customer paid.*not|money.*not.*remit|collect.*not.*remit)/i.test(q)) return 'unremitted';
-  if (/(pending deliver|awaiting deliver|not.*deliver|delivery.*pending)/i.test(q))     return 'deliveries_pending';
-  if (/(all deliver|delivery|dispatch|shipment)/i.test(q))                             return 'deliveries_all';
-
-  if (/(payment method|how.*paid|cash.*vs|breakdown.*payment|payment.*breakdown|pos|transfer.*vs)/i.test(q)) return 'payments_breakdown';
-  if (/(payment|collected|received)/i.test(q))                                         return 'payments_today';
-
-  if (/(pending order|order.*pending|awaiting confirm|not confirm)/i.test(q))          return 'orders_pending';
-  if (/(cancel|cancelled order)/i.test(q))                                             return 'orders_cancelled';
-  if (/(assigned order|order.*assigned)/i.test(q))                                     return 'orders_assigned';
-  if (/(delivered.*await|await.*payment|not.*paid.*deliver)/i.test(q))                return 'orders_awaiting';
-  if (/(delivered.*paid|completed order|successful order)/i.test(q))                   return 'orders_delivered';
-
-  if (/(summary|overview|dashboard|update|how.*business|report|what.*happening)/i.test(q)) return 'summary';
-
-  // Specific rep or partner by name — last resort
-  const name = extractName(q);
-  if (name) return 'rep_or_partner';
-
+  if(extractDate(q)) return 'date';
+  if(/(order|sale).*(today)|today.*(order|sale)/i.test(q))             return 'orders_today';
+  if(/(order|sale).*(this week|week)|(week).*(order|sale)/i.test(q))  return 'orders_week';
+  if(/(order|sale).*(this month|month)|(month).*(order|sale)/i.test(q)) return 'orders_month';
+  if(/(total order|all.*order|all.?time.*order)/i.test(q))             return 'orders_total';
+  if(/(revenue|income|earning|money|how much).*(today)|today.*(revenue|how much)/i.test(q)) return 'revenue_today';
+  if(/(revenue|income|earning|how much).*(this week|week)/i.test(q))   return 'revenue_week';
+  if(/(revenue|income|earning|how much).*(this month|month)/i.test(q)) return 'revenue_month';
+  if(/(total revenue|all.*revenue|all.?time|overall revenue)/i.test(q)) return 'revenue_total';
+  if(/(revenue|income|earning|how much|money made|payment collected)/i.test(q)) return 'revenue_today';
+  if(/(top rep|best rep|top agent|best seller|who.*most|best.*perform)/i.test(q)) return 'rep_top';
+  if(/(rep.*performance|all rep|list.*rep|rep.*rank|how.*rep.*doing|agent.*perform)/i.test(q)) return 'rep_all';
+  if(/(how many rep|number.*rep|count.*rep|active rep)/i.test(q))      return 'rep_count';
+  if(/(logistics|partner.*stock|stock.*partner|stock.*with|sent to|stock for)/i.test(q)) return 'logistics';
+  if(/(stock|inventory|warehouse|product.*level|out of stock|low stock)/i.test(q)) return 'stock';
+  if(/(unremit|not remit|customer paid.*not|money.*not.*remit)/i.test(q)) return 'unremitted';
+  if(/(pending deliver|awaiting deliver|not.*deliver|delivery.*pending)/i.test(q)) return 'deliveries_pending';
+  if(/(all deliver|delivery|dispatch)/i.test(q))                       return 'deliveries_all';
+  if(/(payment method|how.*paid|cash.*vs|pos|transfer.*breakdown|breakdown.*payment)/i.test(q)) return 'payments_breakdown';
+  if(/(payment|collected|received)/i.test(q))                          return 'payments_today';
+  if(/(pending order|order.*pending|awaiting confirm)/i.test(q))       return 'orders_pending';
+  if(/(cancel|cancelled order)/i.test(q))                              return 'orders_cancelled';
+  if(/(assigned order|order.*assigned)/i.test(q))                      return 'orders_assigned';
+  if(/(delivered.*await|await.*payment|not.*paid.*deliver)/i.test(q)) return 'orders_awaiting';
+  if(/(delivered.*paid|completed order|successful order)/i.test(q))    return 'orders_delivered';
+  if(/(summary|overview|dashboard|update|how.*business|report)/i.test(q)) return 'summary';
+  if(extractName(q)) return 'name_lookup';
   return 'summary';
 }
 
-// ── ANSWER BUILDERS — pure JS, zero AI ──
+// ── SUPABASE FETCH HELPERS ──
+const sum   = (arr,k='amount_received') => arr.reduce((s,p)=>s+parseFloat(p[k]||0),0);
+const byMethod = arr => { const m={}; arr.forEach(p=>{const k=p.payment_method||'cash';m[k]=(m[k]||0)+parseFloat(p.amount_received||0);}); return m; };
+const statusCounts = arr => ({
+  pending:            arr.filter(o=>o.status==='pending').length,
+  assigned:           arr.filter(o=>o.status==='assigned').length,
+  delivered_paid:     arr.filter(o=>o.status==='delivered_payment_made').length,
+  delivered_awaiting: arr.filter(o=>o.status==='delivered_awaiting_payment').length,
+  cancelled:          arr.filter(o=>o.status==='cancelled').length,
+});
+const orderRow = o => ({ customer:o.customer_name, amount:parseFloat(o.total_price||0), status:o.status, rep:o.profiles?.full_name||'—', product:o.products?.name||'—' });
+const delivRow = d => ({ customer:d.orders?.customer_name, amount:parseFloat(d.orders?.total_price||0), partner:d.logistics_partners?.name||'—', rep:d.orders?.profiles?.full_name||'—', date:d.assigned_at?.split('T')[0] });
 
-async function answerOrdersToday() {
-  const today = getToday();
-  const rows = await api(`orders?created_at=gte.${today}T00:00:00&select=status,total_price,customer_name,profiles(full_name)&order=created_at.desc`);
-  const active = rows.filter(o=>o.status!=='cancelled');
-  if (!active.length) return `📦 **No orders today** (${date(today)}) yet.`;
-  let out = `📦 **Orders Today** — ${date(today)}\n\n`;
-  out += `**Total:** ${active.length} orders\n`;
-  out += `• Pending: **${active.filter(o=>o.status==='pending').length}**\n`;
-  out += `• Assigned: **${active.filter(o=>o.status==='assigned').length}**\n`;
-  out += `• Delivered & Paid: **${active.filter(o=>o.status==='delivered_payment_made').length}**\n`;
-  out += `• Delivered Awaiting Payment: **${active.filter(o=>o.status==='delivered_awaiting_payment').length}**\n`;
-  out += `• Cancelled: **${rows.filter(o=>o.status==='cancelled').length}**\n\n`;
-  out += `**Order List:**\n`;
-  active.forEach((o,i)=>{ out += `${i+1}. ${o.customer_name} — ${fmt(o.total_price)} [${cap(o.status)}] — Rep: ${o.profiles?.full_name||'—'}\n`; });
-  return out;
-}
+// ── FETCH BY INTENT — precise queries matching dashboard logic exactly ──
+async function fetchContext(intent, q) {
+  const today=getToday(), ws=getWeekStart(), ms=getMonthStart();
 
-async function answerOrdersWeek() {
-  const ws = getWeekStart();
-  const rows = await api(`orders?created_at=gte.${ws}T00:00:00&select=status,total_price,customer_name,created_at,profiles(full_name)&order=created_at.desc`);
-  const active = rows.filter(o=>o.status!=='cancelled');
-  if (!active.length) return `📦 **No orders this week** (from ${date(ws)}) yet.`;
-  let out = `📦 **Orders This Week** (from ${date(ws)})\n\n`;
-  out += `**Total:** ${active.length} orders\n`;
-  out += `• Pending: **${active.filter(o=>o.status==='pending').length}**\n`;
-  out += `• Assigned: **${active.filter(o=>o.status==='assigned').length}**\n`;
-  out += `• Delivered & Paid: **${active.filter(o=>o.status==='delivered_payment_made').length}**\n`;
-  out += `• Delivered Awaiting Payment: **${active.filter(o=>o.status==='delivered_awaiting_payment').length}**\n`;
-  out += `• Cancelled: **${rows.filter(o=>o.status==='cancelled').length}**\n\n`;
-  if(active.length<=20){
-    out += `**Order List:**\n`;
-    active.forEach((o,i)=>{ out += `${i+1}. ${o.customer_name} — ${fmt(o.total_price)} [${cap(o.status)}] — ${date(o.created_at)}\n`; });
+  if(intent==='orders_today') {
+    const rows=await api(`orders?created_at=gte.${today}T00:00:00&select=status,total_price,customer_name,profiles(full_name),products(name)&order=created_at.desc`).catch(()=>[]);
+    return { period:'today', date:today, counts:statusCounts(rows), active_count:rows.filter(o=>o.status!=='cancelled').length, orders:rows.filter(o=>o.status!=='cancelled').map(orderRow) };
   }
-  return out;
-}
-
-async function answerOrdersMonth() {
-  const ms = getMonthStart();
-  const rows = await api(`orders?created_at=gte.${ms}T00:00:00&select=status,total_price&order=created_at.desc`);
-  const active = rows.filter(o=>o.status!=='cancelled');
-  const mn = new Date().toLocaleString('en-GB',{month:'long',year:'numeric'});
-  let out = `📦 **Orders — ${mn}**\n\n`;
-  out += `**Total:** ${active.length} orders\n`;
-  out += `• Pending: **${active.filter(o=>o.status==='pending').length}**\n`;
-  out += `• Delivered & Paid: **${active.filter(o=>o.status==='delivered_payment_made').length}**\n`;
-  out += `• Cancelled: **${rows.filter(o=>o.status==='cancelled').length}**\n`;
-  out += `• Total Order Value: **${fmt(active.reduce((s,o)=>s+parseFloat(o.total_price||0),0))}**\n`;
-  return out;
-}
-
-async function answerOrdersTotal() {
-  const rows = await api(`orders?select=status,total_price`);
-  const active = rows.filter(o=>o.status!=='cancelled');
-  let out = `📦 **All Orders — All Time**\n\n`;
-  out += `**Total Orders:** ${active.length}\n`;
-  out += `• Pending: **${rows.filter(o=>o.status==='pending').length}**\n`;
-  out += `• Assigned: **${rows.filter(o=>o.status==='assigned').length}**\n`;
-  out += `• Delivered & Paid: **${rows.filter(o=>o.status==='delivered_payment_made').length}**\n`;
-  out += `• Delivered Awaiting Payment: **${rows.filter(o=>o.status==='delivered_awaiting_payment').length}**\n`;
-  out += `• Cancelled: **${rows.filter(o=>o.status==='cancelled').length}**\n`;
-  out += `\n**Total Order Value (excl. cancelled):** ${fmt(active.reduce((s,o)=>s+parseFloat(o.total_price||0),0))}\n`;
-  return out;
-}
-
-async function answerRevenueToday() {
-  const today = getToday();
-  const rows = await api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`);
-  const total = rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  let out = `💰 **Revenue Today** — ${date(today)}\n\n`;
-  out += `**Total Collected: ${fmt(total)}**\n`;
-  out += `Transactions: ${rows.length}\n\n`;
-  if(rows.length){
-    out += `**By Payment Method:**\n`;
-    const byM={};rows.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-    Object.entries(byM).forEach(([m,v])=>{ out += `• ${cap(m)}: **${fmt(v)}**\n`; });
+  if(intent==='orders_week') {
+    const rows=await api(`orders?created_at=gte.${ws}T00:00:00&select=status,total_price,customer_name,created_at,profiles(full_name)&order=created_at.desc`).catch(()=>[]);
+    return { period:'this_week', from:ws, counts:statusCounts(rows), active_count:rows.filter(o=>o.status!=='cancelled').length, orders:rows.filter(o=>o.status!=='cancelled').slice(0,30).map(o=>({...orderRow(o),date:o.created_at?.split('T')[0]})) };
   }
-  return out;
-}
-
-async function answerRevenueWeek() {
-  const ws = getWeekStart();
-  const rows = await api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received,payment_method`);
-  const total = rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  let out = `💰 **Revenue This Week** (from ${date(ws)})\n\n`;
-  out += `**Total Collected: ${fmt(total)}**\n`;
-  out += `Transactions: ${rows.length}\n\n`;
-  if(rows.length){
-    out += `**By Payment Method:**\n`;
-    const byM={};rows.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-    Object.entries(byM).forEach(([m,v])=>{ out += `• ${cap(m)}: **${fmt(v)}**\n`; });
+  if(intent==='orders_month') {
+    const rows=await api(`orders?created_at=gte.${ms}T00:00:00&select=status,total_price&order=created_at.desc`).catch(()=>[]);
+    return { period:'this_month', from:ms, counts:statusCounts(rows), active_count:rows.filter(o=>o.status!=='cancelled').length, total_value:sum(rows.filter(o=>o.status!=='cancelled'),'total_price') };
   }
-  return out;
-}
-
-async function answerRevenueMonth() {
-  const ms = getMonthStart();
-  const rows = await api(`payments?confirmed_at=gte.${ms}T00:00:00&select=amount_received,payment_method`);
-  const total = rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const mn = new Date().toLocaleString('en-GB',{month:'long',year:'numeric'});
-  let out = `💰 **Revenue — ${mn}**\n\n`;
-  out += `**Total Collected: ${fmt(total)}**\n`;
-  out += `Transactions: ${rows.length}\n\n`;
-  if(rows.length){
-    out += `**By Payment Method:**\n`;
-    const byM={};rows.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-    Object.entries(byM).forEach(([m,v])=>{ out += `• ${cap(m)}: **${fmt(v)}**\n`; });
+  if(intent==='orders_total') {
+    const rows=await api(`orders?select=status,total_price`).catch(()=>[]);
+    return { period:'all_time', counts:statusCounts(rows), active_count:rows.filter(o=>o.status!=='cancelled').length, total_value:sum(rows.filter(o=>o.status!=='cancelled'),'total_price') };
   }
-  return out;
-}
-
-async function answerRevenueTotal() {
-  const [all, week, todayP] = await Promise.all([
-    api(`payments?select=amount_received,payment_method`),
-    api(`payments?confirmed_at=gte.${getWeekStart()}T00:00:00&select=amount_received`),
-    api(`payments?confirmed_at=gte.${getToday()}T00:00:00&select=amount_received`)
-  ]);
-  const sum = arr=>arr.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const byM={};all.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-  let out = `💰 **Revenue — All Time**\n\n`;
-  out += `**Total All Time: ${fmt(sum(all))}** (${all.length} transactions)\n`;
-  out += `• This Week: **${fmt(sum(week))}**\n`;
-  out += `• Today: **${fmt(sum(todayP))}**\n\n`;
-  out += `**By Payment Method (all time):**\n`;
-  Object.entries(byM).forEach(([m,v])=>{ out += `• ${cap(m)}: **${fmt(v)}**\n`; });
-  return out;
-}
-
-async function answerRepAll() {
-  const [reps, orders] = await Promise.all([
-    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`),
-    api(`orders?select=rep_id,status,total_price`)
-  ]);
-  const active = reps.filter(r=>r.is_active);
-  const map={};
-  active.forEach(r=>{map[r.id]={name:r.full_name,ref:r.ref_code,orders:0,delivered:0,pending:0,revenue:0};});
-  orders.forEach(o=>{
-    if(!map[o.rep_id]||o.status==='cancelled') return;
-    map[o.rep_id].orders++;
-    if(o.status==='delivered_payment_made'){map[o.rep_id].delivered++;map[o.rep_id].revenue+=parseFloat(o.total_price||0);}
-    if(o.status==='pending') map[o.rep_id].pending++;
-  });
-  const sorted=Object.values(map).sort((a,b)=>b.delivered-a.delivered);
-  let out=`🏆 **Rep Performance Rankings**\n\nActive Reps: ${active.length} | Inactive: ${reps.filter(r=>!r.is_active).length}\n\n`;
-  sorted.forEach((r,i)=>{
-    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}.`;
-    out+=`${medal} **${r.name}** (${r.ref})\n`;
-    out+=`   Orders: ${r.orders} | Delivered: ${r.delivered} | Pending: ${r.pending} | Revenue: **${fmt(r.revenue)}**\n\n`;
-  });
-  return out;
-}
-
-async function answerRepTop() {
-  const [reps, orders] = await Promise.all([
-    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`),
-    api(`orders?select=rep_id,status,total_price`)
-  ]);
-  const map={};
-  reps.filter(r=>r.is_active).forEach(r=>{map[r.id]={name:r.full_name,ref:r.ref_code,orders:0,delivered:0,revenue:0};});
-  orders.forEach(o=>{
-    if(!map[o.rep_id]||o.status==='cancelled') return;
-    map[o.rep_id].orders++;
-    if(o.status==='delivered_payment_made'){map[o.rep_id].delivered++;map[o.rep_id].revenue+=parseFloat(o.total_price||0);}
-  });
-  const sorted=Object.values(map).sort((a,b)=>b.delivered-a.delivered);
-  const top=sorted[0];
-  if(!top) return '🏆 No rep data found.';
-  let out=`🥇 **Top Performing Rep**\n\n`;
-  out+=`**${top.name}** (${top.ref})\n`;
-  out+=`• Total Orders: **${top.orders}**\n`;
-  out+=`• Delivered & Paid: **${top.delivered}**\n`;
-  out+=`• Revenue Generated: **${fmt(top.revenue)}**\n\n`;
-  out+=`**Top 3 Leaderboard:**\n`;
-  sorted.slice(0,3).forEach((r,i)=>{
-    const medal=i===0?'🥇':i===1?'🥈':'🥉';
-    out+=`${medal} ${r.name} — ${r.delivered} deliveries — ${fmt(r.revenue)}\n`;
-  });
-  return out;
-}
-
-async function answerRepCount() {
-  const reps = await api(`profiles?role=eq.rep&select=id,full_name,is_active`);
-  const active=reps.filter(r=>r.is_active);
-  let out=`👥 **Sales Reps**\n\n`;
-  out+=`• Total Reps: **${reps.length}**\n`;
-  out+=`• Active: **${active.length}**\n`;
-  out+=`• Inactive: **${reps.filter(r=>!r.is_active).length}**\n\n`;
-  out+=`**Active Reps:**\n`;
-  active.forEach(r=>{ out+=`• ${r.full_name}\n`; });
-  return out;
-}
-
-async function answerRepSpecific(name) {
-  const [reps, orders] = await Promise.all([
-    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`),
-    api(`orders?select=rep_id,status,total_price,customer_name,created_at`)
-  ]);
-  const matched = reps.filter(r=>r.full_name.toLowerCase().includes(name));
-  if(!matched.length){
-    const names=reps.filter(r=>r.is_active).map(r=>r.full_name).join(', ');
-    return `❌ No rep found matching "**${name}**".\n\nAvailable reps: ${names}`;
+  if(intent==='revenue_today') {
+    const rows=await api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]);
+    return { period:'today', date:today, total:sum(rows), transactions:rows.length, by_method:byMethod(rows) };
   }
-  const rep=matched[0];
-  const repOrders=orders.filter(o=>o.rep_id===rep.id&&o.status!=='cancelled');
-  const delivered=repOrders.filter(o=>o.status==='delivered_payment_made');
-  let out=`👤 **${rep.full_name}** (${rep.ref_code}) — ${rep.is_active?'Active':'Inactive'}\n\n`;
-  out+=`• Total Orders: **${repOrders.length}**\n`;
-  out+=`• Delivered & Paid: **${delivered.length}**\n`;
-  out+=`• Pending: **${repOrders.filter(o=>o.status==='pending').length}**\n`;
-  out+=`• Assigned: **${repOrders.filter(o=>o.status==='assigned').length}**\n`;
-  out+=`• Delivered Awaiting Payment: **${repOrders.filter(o=>o.status==='delivered_awaiting_payment').length}**\n`;
-  out+=`• Total Revenue: **${fmt(delivered.reduce((s,o)=>s+parseFloat(o.total_price||0),0))}**\n\n`;
-  const recent=repOrders.slice().sort((a,b)=>b.created_at>a.created_at?1:-1).slice(0,8);
-  if(recent.length){
-    out+=`**Recent Orders:**\n`;
-    recent.forEach(o=>{ out+=`• ${o.customer_name} — ${fmt(o.total_price)} [${cap(o.status)}] — ${date(o.created_at)}\n`; });
+  if(intent==='revenue_week') {
+    const rows=await api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received,payment_method`).catch(()=>[]);
+    return { period:'this_week', from:ws, total:sum(rows), transactions:rows.length, by_method:byMethod(rows) };
   }
-  return out;
-}
-
-async function answerLogistics(q) {
-  const [ls, deliveries] = await Promise.all([
-    api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partners(name),products(name,price)`),
-    api(`deliveries?select=status,customer_paid,remitted_to_admin,logistics_partners(name)`)
-  ]);
-  const byPartner={};
-  ls.forEach(s=>{
-    const pname=s.logistics_partners?.name||'Unknown';
-    if(!byPartner[pname]) byPartner[pname]=[];
-    byPartner[pname].push(s);
-  });
-  const allNames=Object.keys(byPartner);
-  if(!allNames.length) return '❌ No logistics stock data found.';
-
-  const nameHint=extractName(q);
-  let targets=allNames;
-  if(nameHint){
-    const matched=allNames.filter(n=>n.toLowerCase().includes(nameHint));
-    if(matched.length) targets=matched;
-    else return `❌ No logistics partner found matching "**${nameHint}**".\n\nAvailable partners:\n${allNames.map(n=>`• ${n}`).join('\n')}`;
+  if(intent==='revenue_month') {
+    const rows=await api(`payments?confirmed_at=gte.${ms}T00:00:00&select=amount_received,payment_method`).catch(()=>[]);
+    return { period:'this_month', from:ms, total:sum(rows), transactions:rows.length, by_method:byMethod(rows) };
   }
-
-  let out=targets.length===allNames.length?`📦 **All Logistics Partner Stock**\n\n`:`📦 **Logistics Stock — ${targets[0]}**\n\n`;
-  targets.forEach(pname=>{
-    const items=byPartner[pname];
-    const dStats=deliveries.filter(d=>d.logistics_partners?.name===pname);
-    const totalRemaining=items.reduce((s,i)=>s+(i.quantity_remaining||0),0);
-    const unremitted=dStats.filter(d=>d.customer_paid&&!d.remitted_to_admin).length;
-    out+=`**${pname}**\n`;
-    items.forEach(s=>{
-      out+=`• ${s.products?.name} — Sent: ${s.quantity_sent} | Confirmed: ${s.quantity_confirmed} | **Remaining: ${s.quantity_remaining}** | ${s.confirmed?'✅ Confirmed':'⏳ Unconfirmed'}\n`;
+  if(intent==='revenue_total') {
+    const [all,week,tod]=await Promise.all([
+      api(`payments?select=amount_received,payment_method`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received`).catch(()=>[])
+    ]);
+    return { period:'all_time', total:sum(all), this_week:sum(week), today:sum(tod), transactions:all.length, by_method:byMethod(all) };
+  }
+  if(intent==='rep_all'||intent==='rep_top'||intent==='rep_count') {
+    const [reps,orders]=await Promise.all([
+      api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+      api(`orders?select=rep_id,status,total_price`).catch(()=>[])
+    ]);
+    const active=reps.filter(r=>r.is_active);
+    const map={};
+    active.forEach(r=>{map[r.id]={name:r.full_name,ref:r.ref_code,total_orders:0,delivered:0,pending:0,assigned:0,revenue:0};});
+    orders.forEach(o=>{
+      if(!map[o.rep_id]||o.status==='cancelled') return;
+      map[o.rep_id].total_orders++;
+      if(o.status==='delivered_payment_made'){map[o.rep_id].delivered++;map[o.rep_id].revenue+=parseFloat(o.total_price||0);}
+      if(o.status==='pending') map[o.rep_id].pending++;
+      if(o.status==='assigned') map[o.rep_id].assigned++;
     });
-    out+=`Total Remaining: **${totalRemaining}** | Unremitted Payments: **${unremitted}**\n\n`;
+    const ranked=Object.values(map).sort((a,b)=>b.delivered-a.delivered);
+    return { total_reps:reps.length, active_reps:active.length, inactive_reps:reps.filter(r=>!r.is_active).length, ranked_reps:ranked, top_rep:ranked[0]||null };
+  }
+  if(intent==='logistics') {
+    const nameHint=extractName(q);
+    const [ls,deliveries]=await Promise.all([
+      api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partners(name),products(name,price)`).catch(()=>[]),
+      api(`deliveries?select=status,customer_paid,remitted_to_admin,logistics_partners(name)`).catch(()=>[])
+    ]);
+    const byPartner={};
+    ls.forEach(s=>{const pn=s.logistics_partners?.name||'Unknown';if(!byPartner[pn])byPartner[pn]=[];byPartner[pn].push({product:s.products?.name,price:s.products?.price,sent:s.quantity_sent,confirmed_qty:s.quantity_confirmed,remaining:s.quantity_remaining,is_confirmed:s.confirmed,date:s.sent_at?.split('T')[0]});});
+    const allNames=Object.keys(byPartner);
+    let focus=byPartner;
+    if(nameHint){const match=allNames.filter(n=>n.toLowerCase().includes(nameHint));if(match.length) focus=Object.fromEntries(match.map(k=>[k,byPartner[k]]));}
+    const unremitted=deliveries.filter(d=>d.customer_paid&&!d.remitted_to_admin).length;
+    return { queried_partner:nameHint||'all', all_partners:allNames, stock_by_partner:focus, total_unremitted:unremitted };
+  }
+  if(intent==='stock') {
+    const rows=await api(`stock?select=quantity,products(name,price,is_active)&order=products(name)`).catch(()=>[]);
+    const items=rows.map(s=>({product:s.products?.name,qty:s.quantity,price:s.products?.price,active:s.products?.is_active})).filter(s=>s.product);
+    return { items, out_of_stock:items.filter(i=>i.qty<=0), low_stock:items.filter(i=>i.qty>0&&i.qty<=5), total_products:items.length };
+  }
+  if(intent==='unremitted') {
+    const rows=await api(`deliveries?customer_paid=eq.true&remitted_to_admin=eq.false&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    return { count:rows.length, total_value:rows.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0), list:rows.map(delivRow) };
+  }
+  if(intent==='deliveries_pending') {
+    const rows=await api(`deliveries?status=eq.assigned&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    return { count:rows.length, list:rows.map(delivRow) };
+  }
+  if(intent==='deliveries_all') {
+    const rows=await api(`deliveries?select=status,assigned_at,customer_paid,remitted_to_admin,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]);
+    return { total:rows.length, pending:rows.filter(d=>d.status==='assigned').length, delivered:rows.filter(d=>d.status==='delivered').length, unremitted:rows.filter(d=>d.customer_paid&&!d.remitted_to_admin).length, recent:rows.slice(0,20).map(d=>({...delivRow(d),status:d.status,paid:d.customer_paid,remitted:d.remitted_to_admin})) };
+  }
+  if(intent==='payments_breakdown') {
+    const rows=await api(`payments?select=amount_received,payment_method`).catch(()=>[]);
+    return { total:sum(rows), transactions:rows.length, by_method:byMethod(rows) };
+  }
+  if(intent==='payments_today') {
+    const [tod,week]=await Promise.all([
+      api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received`).catch(()=>[])
+    ]);
+    return { today:sum(tod), today_transactions:tod.length, today_by_method:byMethod(tod), this_week:sum(week) };
+  }
+  if(['orders_pending','orders_cancelled','orders_assigned','orders_delivered','orders_awaiting'].includes(intent)) {
+    const statusMap={orders_pending:'pending',orders_cancelled:'cancelled',orders_assigned:'assigned',orders_delivered:'delivered_payment_made',orders_awaiting:'delivered_awaiting_payment'};
+    const st=statusMap[intent];
+    const rows=await api(`orders?status=eq.${st}&select=created_at,customer_name,total_price,profiles(full_name),products(name)&order=created_at.desc`).catch(()=>[]);
+    return { status:st, count:rows.length, total_value:sum(rows,'total_price'), orders:rows.slice(0,25).map(o=>({...orderRow(o),date:o.created_at?.split('T')[0]})) };
+  }
+  if(intent==='date') {
+    const d=extractDate(q);
+    if(!d) return { error:'Could not parse date from question' };
+    const [orders,payments]=await Promise.all([
+      api(`orders?created_at=gte.${d}T00:00:00&created_at=lte.${d}T23:59:59&select=status,total_price,customer_name,profiles(full_name),products(name)&order=created_at.desc`).catch(()=>[]),
+      api(`payments?confirmed_at=gte.${d}T00:00:00&confirmed_at=lte.${d}T23:59:59&select=amount_received,payment_method`).catch(()=>[])
+    ]);
+    return { queried_date:d, counts:statusCounts(orders), active_orders:orders.filter(o=>o.status!=='cancelled').length, revenue:sum(payments), payment_transactions:payments.length, by_method:byMethod(payments), orders:orders.filter(o=>o.status!=='cancelled').map(orderRow) };
+  }
+  if(intent==='name_lookup') {
+    const name=extractName(q);
+    const [reps,partners]=await Promise.all([
+      api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`).catch(()=>[]),
+      api(`logistics_partners?select=id,name`).catch(()=>[])
+    ]);
+    const matchedRep=reps.find(r=>r.full_name.toLowerCase().includes(name||''));
+    const matchedPartner=partners.find(p=>p.name.toLowerCase().includes(name||''));
+    if(matchedRep) {
+      const orders=await api(`orders?rep_id=eq.${matchedRep.id}&select=status,total_price,customer_name,created_at,products(name)&order=created_at.desc`).catch(()=>[]);
+      const active=orders.filter(o=>o.status!=='cancelled');
+      const delivered=active.filter(o=>o.status==='delivered_payment_made');
+      return { type:'rep', name:matchedRep.full_name, ref:matchedRep.ref_code, is_active:matchedRep.is_active, total_orders:active.length, delivered:delivered.length, pending:active.filter(o=>o.status==='pending').length, assigned:active.filter(o=>o.status==='assigned').length, delivered_awaiting:active.filter(o=>o.status==='delivered_awaiting_payment').length, revenue:sum(delivered,'total_price'), recent_orders:active.slice(0,10).map(o=>({...orderRow(o),date:o.created_at?.split('T')[0]})) };
+    }
+    if(matchedPartner) {
+      const ls=await api(`logistics_stock?logistics_partner_id=eq.${matchedPartner.id}&select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,products(name,price)`).catch(()=>[]);
+      const deliveries=await api(`deliveries?logistics_partner_id=eq.${matchedPartner.id}&select=status,customer_paid,remitted_to_admin`).catch(()=>[]);
+      return { type:'logistics_partner', name:matchedPartner.name, stock:ls.map(s=>({product:s.products?.name,sent:s.quantity_sent,confirmed_qty:s.quantity_confirmed,remaining:s.quantity_remaining,is_confirmed:s.confirmed})), total_unremitted:deliveries.filter(d=>d.customer_paid&&!d.remitted_to_admin).length, pending_deliveries:deliveries.filter(d=>d.status==='assigned').length };
+    }
+    return { error:`No rep or logistics partner found matching "${name}"`, available_reps:reps.filter(r=>r.is_active).map(r=>r.full_name), available_partners:partners.map(p=>p.name) };
+  }
+  // summary — lightweight aggregate counts only
+  const [oTod,pTod,oAll,deliv,pWeek]=await Promise.all([
+    api(`orders?created_at=gte.${today}T00:00:00&select=status`).catch(()=>[]),
+    api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received`).catch(()=>[]),
+    api(`orders?select=status`).catch(()=>[]),
+    api(`deliveries?select=status,customer_paid,remitted_to_admin`).catch(()=>[]),
+    api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received`).catch(()=>[])
+  ]);
+  return { type:'summary', today, orders_today:oTod.filter(o=>o.status!=='cancelled').length, revenue_today:sum(pTod), revenue_this_week:sum(pWeek), all_time_counts:statusCounts(oAll), total_orders:oAll.filter(o=>o.status!=='cancelled').length, pending_deliveries:deliv.filter(d=>d.status==='assigned').length, unremitted:deliv.filter(d=>d.customer_paid&&!d.remitted_to_admin).length };
+}
+
+// ── CALL GROQ VIA EDGE FUNCTION (key never in browser) ──
+async function callAI(systemPrompt, userMessage) {
+  const res = await fetch(CHAT_FN, {
+    method : 'POST',
+    headers: { 'Content-Type':'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('lw_token')||SUPABASE_KEY}` },
+    body   : JSON.stringify({ systemPrompt, userMessage })
   });
-  return out;
+  const data = await res.json();
+  if(!res.ok) throw new Error(data?.error||'Edge function error');
+  return data.reply||'No response.';
 }
 
-async function answerStock() {
-  const rows = await api(`stock?select=quantity,products(id,name,price,is_active)&order=products(name)`);
-  const items=rows.map(s=>({name:s.products?.name,qty:s.quantity,price:s.products?.price,active:s.products?.is_active})).filter(s=>s.name);
-  if(!items.length) return '❌ No stock data found.';
-  const outOfStock=items.filter(i=>i.qty<=0);
-  const lowStock=items.filter(i=>i.qty>0&&i.qty<=5);
-  let out=`🏭 **Warehouse Stock Levels**\n\n`;
-  out+=`Total Products: **${items.length}** | Out of Stock: **${outOfStock.length}** | Low Stock (≤5): **${lowStock.length}**\n\n`;
-  if(outOfStock.length){ out+=`⚠️ **Out of Stock:**\n`; outOfStock.forEach(i=>{ out+=`• ${i.name} — ${fmt(i.price)} each\n`; }); out+=`\n`; }
-  if(lowStock.length){ out+=`🔶 **Low Stock:**\n`; lowStock.forEach(i=>{ out+=`• ${i.name} — **${i.qty}** left — ${fmt(i.price)} each\n`; }); out+=`\n`; }
-  const normalStock=items.filter(i=>i.qty>5);
-  if(normalStock.length){ out+=`✅ **Available Stock:**\n`; normalStock.forEach(i=>{ out+=`• ${i.name} — **${i.qty}** units — ${fmt(i.price)} each\n`; }); }
-  return out;
+// ── BUILD SYSTEM PROMPT — small, focused, intent-aware ──
+function buildSystemPrompt(intent, ctx) {
+  const today = new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const base  = `You are a smart business assistant for LivingWell, a Nigerian health/wellness company. Today is ${today}. Currency is Nigerian Naira (₦).
+Answer ONLY from the data provided. Bold key figures with **. Format money as ₦1,250,000. Be concise and specific. Never guess or estimate.`;
+
+  const hints = {
+    orders_today    : 'State total orders today, break down by status, list each order with customer name, amount, status and rep.',
+    orders_week     : 'State total orders this week, break down by status. List orders if 20 or fewer.',
+    orders_month    : 'State total orders this month and total order value, break down by status.',
+    orders_total    : 'State all-time order counts by every status and total order value.',
+    revenue_today   : 'State total revenue collected today, number of transactions, and exact breakdown by payment method.',
+    revenue_week    : 'State total revenue this week, transactions, and payment method breakdown.',
+    revenue_month   : 'State total revenue this month, transactions, and payment method breakdown.',
+    revenue_total   : 'State all-time total revenue, this week, today, total transactions, and full payment method breakdown.',
+    rep_all         : 'Rank all reps by deliveries. For each: name, ref, total orders, deliveries, pending, revenue. Use medals for top 3.',
+    rep_top         : 'Clearly name the top rep with their full stats. Then show top 3 leaderboard.',
+    rep_count       : 'State total, active and inactive rep counts. List all active rep names.',
+    logistics       : 'If a specific partner was queried, show only their stock. For each product: sent, confirmed, remaining. Note unconfirmed stock. State total remaining and unremitted count.',
+    stock           : 'List all products with quantities. Clearly flag out-of-stock and low stock (≤5 units).',
+    unremitted      : 'State count and total value of unremitted payments. List every case with customer, partner, rep, and amount.',
+    deliveries_pending: 'State total pending deliveries. List each with customer, partner, rep, date.',
+    deliveries_all  : 'Give totals: total, pending, delivered, unremitted. List recent entries.',
+    payments_breakdown: 'Show total collected all-time and exact breakdown by payment method with percentages.',
+    payments_today  : 'State today\'s total payments, transactions, method breakdown, and this week\'s total.',
+    orders_pending  : 'List all pending orders with customer, rep, amount, date.',
+    orders_cancelled: 'State total cancelled orders and list them with customer, rep, amount, date.',
+    orders_assigned : 'List all assigned orders with customer, rep, amount, date.',
+    orders_delivered: 'State count and total value of delivered & paid orders. List them.',
+    orders_awaiting : 'State count and total value of delivered-awaiting-payment orders. List them.',
+    date            : 'Answer specifically for the queried_date. State order count, revenue, status breakdown, and list every order.',
+    name_lookup     : 'If type is rep: give their full performance stats and recent orders. If type is logistics_partner: show their stock per product and delivery stats. If error: say who was not found and list available names.',
+    summary         : 'Give a quick business snapshot: orders today, revenue today, revenue this week, all-time order status breakdown, pending deliveries, unremitted payments.',
+  };
+
+  return `${base}\n\nFocus: ${hints[intent]||hints.summary}\n\nLive data:\n${JSON.stringify(ctx)}`;
 }
 
-async function answerDeliveriesPending() {
-  const rows = await api(`deliveries?status=eq.assigned&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`);
-  if(!rows.length) return '✅ **No pending deliveries** right now.';
-  let out=`🚚 **Pending Deliveries** — ${rows.length} total\n\n`;
-  rows.forEach((d,i)=>{ out+=`${i+1}. ${d.orders?.customer_name} — ${fmt(d.orders?.total_price)} | Partner: ${d.logistics_partners?.name||'—'} | Rep: ${d.orders?.profiles?.full_name||'—'} | Since: ${date(d.assigned_at)}\n`; });
-  return out;
-}
-
-async function answerDeliveriesAll() {
-  const rows = await api(`deliveries?select=status,assigned_at,customer_paid,remitted_to_admin,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`);
-  if(!rows.length) return '❌ No delivery records found.';
-  const pending=rows.filter(d=>d.status==='assigned');
-  const delivered=rows.filter(d=>d.status==='delivered');
-  const unremitted=rows.filter(d=>d.customer_paid&&!d.remitted_to_admin);
-  let out=`🚚 **All Deliveries**\n\n`;
-  out+=`• Total: **${rows.length}**\n`;
-  out+=`• Pending Delivery: **${pending.length}**\n`;
-  out+=`• Delivered: **${delivered.length}**\n`;
-  out+=`• Unremitted (paid but not remitted): **${unremitted.length}**\n\n`;
-  if(pending.length){
-    out+=`**Pending:**\n`;
-    pending.slice(0,10).forEach(d=>{ out+=`• ${d.orders?.customer_name} — ${fmt(d.orders?.total_price)} | ${d.logistics_partners?.name||'—'}\n`; });
-    if(pending.length>10) out+=`...and ${pending.length-10} more\n`;
-  }
-  return out;
-}
-
-async function answerUnremitted() {
-  const rows = await api(`deliveries?customer_paid=eq.true&remitted_to_admin=eq.false&select=assigned_at,logistics_partners(name),orders(customer_name,total_price,profiles(full_name))&order=assigned_at.desc`);
-  if(!rows.length) return '✅ **No unremitted payments** — all collected payments have been remitted.';
-  const total=rows.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0);
-  let out=`⚠️ **Unremitted Payments** — ${rows.length} cases\n\n`;
-  out+=`**Total Value: ${fmt(total)}**\n\n`;
-  rows.forEach((d,i)=>{ out+=`${i+1}. ${d.orders?.customer_name} — ${fmt(d.orders?.total_price)} | Partner: ${d.logistics_partners?.name||'—'} | Rep: ${d.orders?.profiles?.full_name||'—'} | Date: ${date(d.assigned_at)}\n`; });
-  return out;
-}
-
-async function answerPaymentsBreakdown() {
-  const rows = await api(`payments?select=amount_received,payment_method`);
-  if(!rows.length) return '❌ No payment records found.';
-  const total=rows.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const byM={};rows.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-  let out=`💳 **Payment Breakdown — All Time**\n\n`;
-  out+=`**Total Collected: ${fmt(total)}** (${rows.length} transactions)\n\n`;
-  out+=`**By Method:**\n`;
-  Object.entries(byM).sort((a,b)=>b[1]-a[1]).forEach(([m,v])=>{
-    const pct=((v/total)*100).toFixed(1);
-    out+=`• ${cap(m)}: **${fmt(v)}** (${pct}%)\n`;
-  });
-  return out;
-}
-
-async function answerPaymentsToday() {
-  const today=getToday();
-  const [todayP, weekP] = await Promise.all([
-    api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received,payment_method`),
-    api(`payments?confirmed_at=gte.${getWeekStart()}T00:00:00&select=amount_received`)
-  ]);
-  const todayTotal=todayP.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const weekTotal=weekP.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const byM={};todayP.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-  let out=`💰 **Payments — ${date(today)}**\n\n`;
-  out+=`**Today: ${fmt(todayTotal)}** (${todayP.length} transactions)\n`;
-  out+=`This Week: ${fmt(weekTotal)}\n\n`;
-  if(todayP.length){
-    out+=`**Today by Method:**\n`;
-    Object.entries(byM).forEach(([m,v])=>{ out+=`• ${cap(m)}: **${fmt(v)}**\n`; });
-  }
-  return out;
-}
-
-async function answerOrdersByStatus(status, label) {
-  const rows = await api(`orders?status=eq.${status}&select=created_at,customer_name,total_price,profiles(full_name)&order=created_at.desc`);
-  if(!rows.length) return `✅ No **${label}** orders found.`;
-  const total=rows.reduce((s,o)=>s+parseFloat(o.total_price||0),0);
-  let out=`📦 **${label} Orders** — ${rows.length} total\n`;
-  out+=`Total Value: **${fmt(total)}**\n\n`;
-  rows.slice(0,20).forEach((o,i)=>{ out+=`${i+1}. ${o.customer_name} — ${fmt(o.total_price)} | Rep: ${o.profiles?.full_name||'—'} | ${date(o.created_at)}\n`; });
-  if(rows.length>20) out+=`...and ${rows.length-20} more`;
-  return out;
-}
-
-async function answerDateQuery(q) {
-  const d=extractDate(q);
-  if(!d) return `❌ Could not understand the date. Try: "orders on 3rd April" or "orders on 2025-04-03"`;
-  const [orders, payments] = await Promise.all([
-    api(`orders?created_at=gte.${d}T00:00:00&created_at=lte.${d}T23:59:59&select=status,total_price,customer_name,profiles(full_name)&order=created_at.desc`),
-    api(`payments?confirmed_at=gte.${d}T00:00:00&confirmed_at=lte.${d}T23:59:59&select=amount_received,payment_method`)
-  ]);
-  const active=orders.filter(o=>o.status!=='cancelled');
-  const revenue=payments.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const byM={};payments.forEach(p=>{const k=p.payment_method||'Unknown';byM[k]=(byM[k]||0)+parseFloat(p.amount_received||0);});
-  let out=`📅 **${date(d)}**\n\n`;
-  out+=`Orders: **${active.length}** | Revenue: **${fmt(revenue)}**\n`;
-  out+=`• Pending: ${active.filter(o=>o.status==='pending').length} | Assigned: ${active.filter(o=>o.status==='assigned').length}\n`;
-  out+=`• Delivered & Paid: ${active.filter(o=>o.status==='delivered_payment_made').length} | Cancelled: ${orders.filter(o=>o.status==='cancelled').length}\n\n`;
-  if(payments.length){
-    out+=`**Revenue by Method:**\n`;
-    Object.entries(byM).forEach(([m,v])=>{ out+=`• ${cap(m)}: **${fmt(v)}**\n`; });
-    out+=`\n`;
-  }
-  if(active.length){
-    out+=`**Orders:**\n`;
-    active.forEach((o,i)=>{ out+=`${i+1}. ${o.customer_name} — ${fmt(o.total_price)} [${cap(o.status)}] — ${o.profiles?.full_name||'—'}\n`; });
-  } else { out+=`No orders on this date.`; }
-  return out;
-}
-
-async function answerSummary() {
-  const today=getToday(), ws=getWeekStart();
-  const [oToday, pToday, oAll, deliv, pWeek] = await Promise.all([
-    api(`orders?created_at=gte.${today}T00:00:00&select=status`),
-    api(`payments?confirmed_at=gte.${today}T00:00:00&select=amount_received`),
-    api(`orders?select=status`),
-    api(`deliveries?select=status,customer_paid,remitted_to_admin`),
-    api(`payments?confirmed_at=gte.${ws}T00:00:00&select=amount_received`)
-  ]);
-  const revenueToday=pToday.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const revenueWeek=pWeek.reduce((s,p)=>s+parseFloat(p.amount_received||0),0);
-  const oActive=oToday.filter(o=>o.status!=='cancelled');
-  let out=`📊 **Business Summary — ${date(today)}**\n\n`;
-  out+=`**TODAY**\n`;
-  out+=`• Orders: **${oActive.length}** | Revenue: **${fmt(revenueToday)}**\n\n`;
-  out+=`**THIS WEEK** (from ${date(ws)})\n`;
-  out+=`• Revenue: **${fmt(revenueWeek)}**\n\n`;
-  out+=`**ALL TIME ORDERS**\n`;
-  out+=`• Total: **${oAll.filter(o=>o.status!=='cancelled').length}**\n`;
-  out+=`• Pending: **${oAll.filter(o=>o.status==='pending').length}**\n`;
-  out+=`• Assigned: **${oAll.filter(o=>o.status==='assigned').length}**\n`;
-  out+=`• Delivered & Paid: **${oAll.filter(o=>o.status==='delivered_payment_made').length}**\n`;
-  out+=`• Delivered Awaiting Payment: **${oAll.filter(o=>o.status==='delivered_awaiting_payment').length}**\n`;
-  out+=`• Cancelled: **${oAll.filter(o=>o.status==='cancelled').length}**\n\n`;
-  out+=`**DELIVERIES**\n`;
-  out+=`• Pending Delivery: **${deliv.filter(d=>d.status==='assigned').length}**\n`;
-  out+=`• Unremitted Payments: **${deliv.filter(d=>d.customer_paid&&!d.remitted_to_admin).length}**\n`;
-  return out;
-}
-
-// ── MAIN SEND — pure JS, zero AI tokens ──
+// ── MAIN SEND ──
 async function sendChatMessage() {
-  if (chatBusy) return;
+  if(chatBusy) return;
   const input = document.getElementById('chat-input');
   const text  = input.value.trim();
-  if (!text) return;
-
+  if(!text) return;
   input.value=''; input.style.height='auto';
   appendUserMessage(text);
   chatBusy=true; showTyping();
-
   try {
-    const q = text.toLowerCase();
+    const q      = text.toLowerCase();
     const intent = detectIntent(q);
-    let answer = '';
-
-    if      (intent==='orders_today')     answer = await answerOrdersToday();
-    else if (intent==='orders_week')      answer = await answerOrdersWeek();
-    else if (intent==='orders_month')     answer = await answerOrdersMonth();
-    else if (intent==='orders_total')     answer = await answerOrdersTotal();
-    else if (intent==='revenue_today')    answer = await answerRevenueToday();
-    else if (intent==='revenue_week')     answer = await answerRevenueWeek();
-    else if (intent==='revenue_month')    answer = await answerRevenueMonth();
-    else if (intent==='revenue_total')    answer = await answerRevenueTotal();
-    else if (intent==='rep_all')          answer = await answerRepAll();
-    else if (intent==='rep_top')          answer = await answerRepTop();
-    else if (intent==='rep_count')        answer = await answerRepCount();
-    else if (intent==='logistics')        answer = await answerLogistics(q);
-    else if (intent==='stock')            answer = await answerStock();
-    else if (intent==='deliveries_pending') answer = await answerDeliveriesPending();
-    else if (intent==='deliveries_all')   answer = await answerDeliveriesAll();
-    else if (intent==='unremitted')       answer = await answerUnremitted();
-    else if (intent==='payments_breakdown') answer = await answerPaymentsBreakdown();
-    else if (intent==='payments_today')   answer = await answerPaymentsToday();
-    else if (intent==='orders_pending')   answer = await answerOrdersByStatus('pending','Pending');
-    else if (intent==='orders_cancelled') answer = await answerOrdersByStatus('cancelled','Cancelled');
-    else if (intent==='orders_assigned')  answer = await answerOrdersByStatus('assigned','Assigned');
-    else if (intent==='orders_delivered') answer = await answerOrdersByStatus('delivered_payment_made','Delivered & Paid');
-    else if (intent==='orders_awaiting')  answer = await answerOrdersByStatus('delivered_awaiting_payment','Delivered Awaiting Payment');
-    else if (intent==='date')             answer = await answerDateQuery(q);
-    else if (intent==='rep_or_partner') {
-      const name = extractName(q);
-      // Try rep first, then logistics
-      const reps = await api(`profiles?role=eq.rep&select=id,full_name`);
-      const isRep = reps.some(r=>r.full_name.toLowerCase().includes(name));
-      if(isRep) answer = await answerRepSpecific(name);
-      else answer = await answerLogistics(q);
-    }
-    else answer = await answerSummary();
-
+    const ctx    = await fetchContext(intent, q);
+    const sysPr  = buildSystemPrompt(intent, ctx);
+    const reply  = await callAI(sysPr, text);
     hideTyping();
-    appendBotMessage(answer);
+    appendBotMessage(reply);
   } catch(e) {
     hideTyping();
-    appendBotMessage('⚠️ Something went wrong: '+e.message);
+    appendBotMessage('⚠️ '+e.message);
   }
   chatBusy=false;
 }
