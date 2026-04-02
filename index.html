@@ -1321,14 +1321,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         </div>
       </div>
 
-      <!-- Low Stock Alert Banner -->
-      <div id="low-stock-alert" style="display:none;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);border-radius:14px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" width="20" height="20" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <div style="flex:1;">
-          <div style="font-size:0.85rem;font-weight:700;color:#f87171;">Low Stock Alert</div>
-          <div id="low-stock-alert-text" style="font-size:0.78rem;color:var(--text2);margin-top:2px;"></div>
+      <!-- Low Stock Alert — collapsed pill, click to expand -->
+      <div id="low-stock-alert" style="display:none;margin-bottom:20px;">
+        <div onclick="toggleLowStockAlert()" style="display:inline-flex;align-items:center;gap:8px;background:rgba(244,63,94,0.1);border:1px solid rgba(244,63,94,0.3);border-radius:30px;padding:6px 14px 6px 10px;cursor:pointer;transition:background 0.2s;" title="Click to see low stock details">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" width="16" height="16" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span id="low-stock-pill-label" style="font-size:0.78rem;font-weight:700;color:#f87171;"></span>
+          <svg id="low-stock-chevron" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" width="12" height="12" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="showPage('logistics')" style="font-size:0.75rem;">View Stock →</button>
+        <div id="low-stock-panel" style="display:none;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);border-radius:14px;padding:14px 20px;margin-top:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div style="font-size:0.85rem;font-weight:700;color:#f87171;">Low Stock Alert</div>
+            <button class="btn btn-ghost btn-sm" onclick="showPage('logistics')" style="font-size:0.75rem;">View Stock →</button>
+          </div>
+          <div id="low-stock-alert-text" style="font-size:0.78rem;color:var(--text2);line-height:1.7;"></div>
+        </div>
       </div>
 
       <!-- Remittance Cancelled Alert Banner -->
@@ -2813,6 +2819,15 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
 }
 
+function toggleLowStockAlert() {
+  const panel   = document.getElementById('low-stock-panel');
+  const chevron = document.getElementById('low-stock-chevron');
+  if (!panel) return;
+  const open = panel.style.display === 'block';
+  panel.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
 // ── API HELPER ──
 async function api(path, method = 'GET', body = null, extraHeaders = {}) {
   // Use SERVICE_KEY for all write operations so any admin (owner or manager)
@@ -2914,12 +2929,16 @@ async function loadDashboard() {
     try {
       const stockData = await api('logistics_stock?select=*,products(name),logistics_partners(name)');
       const lowItems = (stockData||[]).filter(s => (s.quantity_remaining||0) <= 5 && s.confirmed);
-      const alertEl = document.getElementById('low-stock-alert');
-      const alertText = document.getElementById('low-stock-alert-text');
+      const alertEl   = document.getElementById('low-stock-alert');
+      const alertText  = document.getElementById('low-stock-alert-text');
+      const pillLabel  = document.getElementById('low-stock-pill-label');
       if (alertEl) {
         if (lowItems.length > 0) {
-          alertEl.style.display = 'flex';
-          alertText.textContent = lowItems.map(s => `${s.logistics_partners?.name||'Partner'}: ${s.products?.name||'Product'} (${s.quantity_remaining} left)`).join(' · ');
+          alertEl.style.display = 'block';
+          if (pillLabel) pillLabel.textContent = `${lowItems.length} item${lowItems.length>1?'s':''} low on stock`;
+          if (alertText) alertText.innerHTML = lowItems.map(s =>
+            `<div style="padding:2px 0;">• <strong>${s.logistics_partners?.name||'Partner'}</strong>: ${s.products?.name||'Product'} — <strong style="color:#f87171;">${s.quantity_remaining} left</strong></div>`
+          ).join('');
         } else {
           alertEl.style.display = 'none';
         }
@@ -6326,6 +6345,15 @@ function showTyping() {
   div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
   msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
+function updateTypingLabel(usingQwen) {
+  const ind = document.getElementById('chat-typing-indicator');
+  if (!ind) return;
+  const bubble = ind.querySelector('.chat-msg-bubble');
+  if (!bubble) return;
+  bubble.innerHTML = usingQwen
+    ? `<div class="typing-dots"><span></span><span></span><span></span></div><div style="font-size:0.68rem;color:var(--text3);margin-top:6px;">Thinking…</div>`
+    : `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+}
 function hideTyping()  { document.getElementById('chat-typing-indicator')?.remove(); }
 function formatChatText(t) {
   return escapeHtml(t)
@@ -6451,17 +6479,24 @@ async function fetchAllBusinessData(q) {
     date:     fmtDate(o.created_at)
   }));
 
-  // ── Payments/Revenue breakdown ──
-  const pToday    = paymentsAll.filter(p=>fmtDate(p.confirmed_at)===today);
-  const pWeek     = paymentsAll.filter(p=>fmtDate(p.confirmed_at)>=ws);
-  const pMonth    = paymentsAll.filter(p=>fmtDate(p.confirmed_at)>=ms);
-  const pSpecific = specificDate ? paymentsAll.filter(p=>fmtDate(p.confirmed_at)===specificDate) : [];
-  const pSpecWeek = specificWeek ? paymentsAll.filter(p=>fmtDate(p.confirmed_at)>=specificWeek.from&&fmtDate(p.confirmed_at)<=specificWeek.to) : [];
+  // ── Revenue — computed from orders with delivered_payment_made status (same as dashboard) ──
+  // paymentsAll kept for method breakdown only (if populated); total revenue uses order total_price
+  const paidOrders    = ordersAll.filter(o=>o.status==='delivered_payment_made');
+  const awaitingOrders= ordersAll.filter(o=>o.status==='delivered_awaiting_payment');
 
+  const revToday   = paidOrders.filter(o=>fmtDate(o.created_at)===today);
+  const revWeek    = paidOrders.filter(o=>fmtDate(o.created_at)>=ws);
+  const revMonth   = paidOrders.filter(o=>fmtDate(o.created_at)>=ms);
+  const revSpecific= specificDate ? paidOrders.filter(o=>fmtDate(o.created_at)===specificDate) : [];
+  const revSpecWeek= specificWeek ? paidOrders.filter(o=>fmtDate(o.created_at)>=specificWeek.from&&fmtDate(o.created_at)<=specificWeek.to) : [];
+
+  const sumOrders = arr => arr.reduce((s,o)=>s+parseFloat(o.total_price||0),0);
+
+  // Payment method breakdown from payments table (bonus detail if available)
   const methodBreakdown = arr => {
     const m={};
     arr.forEach(p=>{const k=p.payment_method||'cash';m[k]=(m[k]||0)+parseFloat(p.amount_received||0);});
-    return m;
+    return Object.keys(m).length ? m : null;
   };
 
   // ── Rep performance — matches dashboard exactly ──
@@ -6542,12 +6577,12 @@ async function fetchAllBusinessData(q) {
     },
 
     revenue: {
-      today:      { total:sumAmt(pToday),  transactions:pToday.length,  by_method:methodBreakdown(pToday)  },
-      this_week:  { total:sumAmt(pWeek),   transactions:pWeek.length,   by_method:methodBreakdown(pWeek)   },
-      this_month: { total:sumAmt(pMonth),  transactions:pMonth.length,  by_method:methodBreakdown(pMonth)  },
-      all_time:   { total:sumAmt(paymentsAll), transactions:paymentsAll.length, by_method:methodBreakdown(paymentsAll) },
-      specific_date: specificDate ? { date:specificDate, total:sumAmt(pSpecific), transactions:pSpecific.length, by_method:methodBreakdown(pSpecific) } : null,
-      specific_week: specificWeek ? { ...specificWeek, total:sumAmt(pSpecWeek), transactions:pSpecWeek.length, by_method:methodBreakdown(pSpecWeek) } : null,
+      today:      { total:sumOrders(revToday),    orders:revToday.length,    awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)===today)) },
+      this_week:  { total:sumOrders(revWeek),     orders:revWeek.length,     awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ws)) },
+      this_month: { total:sumOrders(revMonth),    orders:revMonth.length,    awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ms)) },
+      all_time:   { total:sumOrders(paidOrders),  orders:paidOrders.length,  awaiting_payment:sumOrders(awaitingOrders), by_method:methodBreakdown(paymentsAll) },
+      specific_date: specificDate ? { date:specificDate, total:sumOrders(revSpecific), orders:revSpecific.length } : null,
+      specific_week: specificWeek ? { ...specificWeek,   total:sumOrders(revSpecWeek), orders:revSpecWeek.length } : null,
     },
 
     reps: {
@@ -6584,19 +6619,13 @@ async function fetchAllBusinessData(q) {
   };
 }
 
-// ── CALL AI VIA EDGE FUNCTION (Groq first, Qwen fallback) ──
-// The edge function handles both models. It tries Groq first and falls back
-// to Qwen via OpenRouter if Groq fails or the token limit is exceeded.
-// Both API keys live as Supabase secrets — nothing is stored in this file.
-
+// ── CALL AI VIA EDGE FUNCTION (Groq first, Qwen fallback handled server-side) ──
 function estimateTokens(str) { return Math.ceil(str.length / 4); }
-const GROQ_TOKEN_LIMIT = 5800; // ~6k token context, leave headroom
+const GROQ_TOKEN_LIMIT = 5800;
 
 async function callAI(systemPrompt, userMessage) {
-  const totalTokens = estimateTokens(systemPrompt + userMessage);
-  // Tell the edge function whether to skip straight to Qwen
-  const preferQwen = totalTokens > GROQ_TOKEN_LIMIT;
-
+  const preferQwen = estimateTokens(systemPrompt + userMessage) > GROQ_TOKEN_LIMIT;
+  if (preferQwen) updateTypingLabel(true);
   const res = await fetch(CHAT_FN, {
     method : 'POST',
     headers: {
@@ -6638,6 +6667,7 @@ KEY RULES:
 - If a specific date or week was asked about, use specific_date or specific_week fields
 - For rep questions: use the reps.all_reps array ranked by delivered_paid
 - For logistics partner stock: use logistics.by_partner — each key is a partner name
+- REVENUE SOURCE: revenue figures come from orders with status "delivered_payment_made" using total_price — NOT the payments table. revenue.today.total = sum of today's paid orders. revenue.all_time.awaiting_payment = money not yet collected.
 - For unremitted: use deliveries.unremitted_list and unremitted_value
 - For remitted: use deliveries.remitted_list and remitted_value  
 - For stock: use stock.warehouse — qty is current quantity
