@@ -6327,67 +6327,80 @@ function chatKeyDown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();se
 function sendChip(el) { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
 
 async function fetchBusinessContext(question) {
-  const q = question.toLowerCase();
   const today = new Date().toISOString().split('T')[0];
   const now = new Date();
   const day = now.getDay();
   const diffToMon = day===0?-6:1-day;
   const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
   const weekStart = monday.toISOString();
-  const context = {};
-  const tasks = [];
 
-  tasks.push(
-    api(`orders?select=id,status,total_price,created_at,rep_id,profiles(full_name,ref_code)&order=created_at.desc&limit=300`)
-      .then(d=>{context.orders=d||[];}).catch(()=>{context.orders=[];})
-  );
+  // Always fetch ALL core data with no limits so numbers match the dashboard exactly
+  const [orders, reps, deliveries, payments, stock] = await Promise.all([
+    api(`orders?select=id,status,total_price,created_at,rep_id,profiles(full_name,ref_code)&order=created_at.desc`)
+      .catch(()=>[]),
+    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active`)
+      .catch(()=>[]),
+    api(`deliveries?select=id,status,order_id,remitted_to_admin,customer_paid,logistics_partners(name)&order=assigned_at.desc`)
+      .catch(()=>[]),
+    api(`payments?select=amount,payment_method,created_at&order=created_at.desc`)
+      .catch(()=>[]),
+    api(`stock?select=quantity,products(name,price,is_active)`)
+      .catch(()=>[])
+  ]);
 
-  if (q.match(/rep|perform|top|leaderboard|sales|who/)) {
-    tasks.push(api(`profiles?role=eq.rep&is_active=eq.true&select=id,full_name,ref_code`).then(d=>{context.reps=d||[];}).catch(()=>{context.reps=[];}));
-  }
-  if (q.match(/deliver|logistics|partner|pending|assign|ship/)) {
-    tasks.push(api(`deliveries?select=id,status,order_id,remitted_to_admin,customer_paid,logistics_partners(name)&order=assigned_at.desc&limit=100`).then(d=>{context.deliveries=d||[];}).catch(()=>{context.deliveries=[];}));
-  }
-  if (q.match(/payment|revenue|money|cash|paid|remit|collect/)) {
-    tasks.push(api(`payments?select=amount,payment_method,created_at&order=created_at.desc&limit=100`).then(d=>{context.payments=d||[];}).catch(()=>{context.payments=[];}));
-  }
-  if (q.match(/stock|product|inventory|item|quantity/)) {
-    tasks.push(api(`stock?select=quantity,products(name,price)`).then(d=>{context.stock=d||[];}).catch(()=>{context.stock=[];}));
-  }
+  const todayOrders = (orders||[]).filter(o=>o.created_at?.startsWith(today));
+  const weekOrders  = (orders||[]).filter(o=>o.created_at>=weekStart);
+  const activeReps  = (reps||[]).filter(r=>r.is_active);
 
-  await Promise.all(tasks);
+  // Rep performance map
+  const repMap = {};
+  activeReps.forEach(r=>{repMap[r.id]={name:r.full_name,ref:r.ref_code,total_orders:0,delivered_orders:0,value:0};});
+  (orders||[]).forEach(o=>{
+    if(repMap[o.rep_id]){
+      repMap[o.rep_id].total_orders++;
+      if(o.status==='delivered_payment_made'){
+        repMap[o.rep_id].delivered_orders++;
+        repMap[o.rep_id].value+=parseFloat(o.total_price||0);
+      }
+    }
+  });
 
-  const summary = {};
-  const todayOrders = (context.orders||[]).filter(o=>o.created_at?.startsWith(today));
-  const weekOrders  = (context.orders||[]).filter(o=>o.created_at>=weekStart);
-  summary.orders_today = todayOrders.length;
-  summary.orders_this_week = weekOrders.length;
-  summary.total_orders_all_time = context.orders?.length||0;
-  summary.revenue_today = todayOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0);
-  summary.revenue_this_week = weekOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0);
-  summary.pending_orders = (context.orders||[]).filter(o=>o.status==='pending').length;
-  summary.cancelled_orders = (context.orders||[]).filter(o=>o.status==='cancelled').length;
+  const summary = {
+    // Orders
+    orders_today: todayOrders.length,
+    orders_this_week: weekOrders.length,
+    total_orders_all_time: (orders||[]).length,
+    pending_orders: (orders||[]).filter(o=>o.status==='pending').length,
+    assigned_orders: (orders||[]).filter(o=>o.status==='assigned').length,
+    delivered_orders: (orders||[]).filter(o=>o.status==='delivered_payment_made').length,
+    delivered_awaiting_payment: (orders||[]).filter(o=>o.status==='delivered_awaiting_payment').length,
+    cancelled_orders: (orders||[]).filter(o=>o.status==='cancelled').length,
 
-  if (context.reps) {
-    const repMap = {};
-    context.reps.forEach(r=>{repMap[r.id]={name:r.full_name,ref:r.ref_code,orders:0,value:0};});
-    (context.orders||[]).filter(o=>o.status==='delivered_payment_made').forEach(o=>{
-      if(repMap[o.rep_id]){repMap[o.rep_id].orders++;repMap[o.rep_id].value+=parseFloat(o.total_price||0);}
-    });
-    summary.rep_performance = Object.values(repMap).sort((a,b)=>b.orders-a.orders);
-  }
-  if (context.deliveries) {
-    summary.pending_deliveries = context.deliveries.filter(d=>d.status==='assigned').length;
-    summary.delivered_count = context.deliveries.filter(d=>['delivered_payment_made','delivered_awaiting_payment'].includes(d.status)).length;
-    summary.unremitted_to_admin = context.deliveries.filter(d=>d.customer_paid&&!d.remitted_to_admin).length;
-  }
-  if (context.payments) {
-    summary.total_payments_recorded = context.payments.reduce((s,p)=>s+parseFloat(p.amount||0),0);
-  }
-  if (context.stock) {
-    summary.stock_levels = context.stock.map(s=>({product:s.products?.name,qty:s.quantity,price:s.products?.price}));
-    summary.low_stock_items = summary.stock_levels.filter(s=>s.qty<=10);
-  }
+    // Revenue
+    revenue_today: todayOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
+    revenue_this_week: weekOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
+    total_revenue_all_time: (orders||[]).filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0),
+
+    // Reps
+    total_active_reps: activeReps.length,
+    total_reps: (reps||[]).length,
+    rep_performance: Object.values(repMap).sort((a,b)=>b.delivered_orders-a.delivered_orders),
+
+    // Deliveries
+    pending_deliveries: (deliveries||[]).filter(d=>d.status==='assigned').length,
+    completed_deliveries: (deliveries||[]).filter(d=>['delivered_payment_made','delivered_awaiting_payment'].includes(d.status)).length,
+    unremitted_to_admin: (deliveries||[]).filter(d=>d.customer_paid&&!d.remitted_to_admin).length,
+
+    // Payments
+    total_payments_recorded: (payments||[]).reduce((s,p)=>s+parseFloat(p.amount||0),0),
+    payments_today: (payments||[]).filter(p=>p.created_at?.startsWith(today)).reduce((s,p)=>s+parseFloat(p.amount||0),0),
+    payments_this_week: (payments||[]).filter(p=>p.created_at>=weekStart).reduce((s,p)=>s+parseFloat(p.amount||0),0),
+
+    // Stock
+    stock_levels: (stock||[]).map(s=>({product:s.products?.name,qty:s.quantity,unit_price:s.products?.price})),
+    low_stock_items: (stock||[]).filter(s=>s.quantity<=10).map(s=>({product:s.products?.name,qty:s.quantity})),
+  };
+
   return summary;
 }
 
