@@ -6081,5 +6081,367 @@ function closeWeeklyPerf() {
   </div>
 </div>
 
+<!-- ══ AI CHATBOT ══ -->
+<style>
+#chat-launcher {
+  position: fixed; bottom: 28px; right: 28px;
+  width: 54px; height: 54px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple), #9F67FA);
+  box-shadow: 0 4px 24px var(--purple-glow);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9000; transition: transform 0.2s, box-shadow 0.2s;
+}
+#chat-launcher:hover { transform: scale(1.08); box-shadow: 0 8px 32px var(--purple-glow); }
+#chat-launcher svg { width: 24px; height: 24px; color: white; }
+#chat-launcher .icon-open  { display: block; }
+#chat-launcher .icon-close { display: none; }
+#chat-launcher.active .icon-open  { display: none; }
+#chat-launcher.active .icon-close { display: block; }
+.chat-pulse {
+  position: absolute; top: -2px; right: -2px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--green); border: 2px solid var(--bg);
+  animation: pulse-ring 2s infinite;
+}
+@keyframes pulse-ring {
+  0%,100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.6; }
+}
+#chat-window {
+  position: fixed; bottom: 94px; right: 28px;
+  width: 370px; height: 540px;
+  background: var(--bg3); border: 1px solid var(--card-border);
+  border-radius: 24px; box-shadow: 0 16px 56px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column;
+  z-index: 8999; overflow: hidden;
+  opacity: 0; pointer-events: none;
+  transform: translateY(16px) scale(0.97); transform-origin: bottom right;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#chat-window.open { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
+.chat-header {
+  padding: 16px 18px 14px; border-bottom: 1px solid var(--card-border);
+  display: flex; align-items: center; gap: 11px; flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(124,58,237,0.12), transparent);
+}
+.chat-header-avatar {
+  width: 36px; height: 36px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--purple), #9F67FA);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.chat-header-avatar svg { width: 18px; height: 18px; color: white; }
+.chat-header-name { font-size: 0.9rem; font-weight: 700; color: var(--white); }
+.chat-header-status { font-size: 0.7rem; color: var(--green); display: flex; align-items: center; gap: 4px; margin-top: 1px; }
+.chat-header-status::before { content:''; width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0; }
+#chat-apikey-banner {
+  background: rgba(245,158,11,0.08); border-bottom: 1px solid rgba(245,158,11,0.2);
+  padding: 10px 14px; flex-shrink: 0; display: none;
+}
+#chat-apikey-banner.show { display: block; }
+.apikey-banner-label { font-size: 0.7rem; font-weight: 700; color: var(--amber); margin-bottom: 6px; }
+.apikey-input-row { display: flex; gap: 7px; }
+#chat-gemini-key {
+  flex: 1; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(245,158,11,0.3); border-radius: 8px;
+  padding: 7px 10px; font-size: 0.78rem;
+  font-family: 'Inter', sans-serif; color: var(--text); outline: none;
+}
+#chat-gemini-key:focus { border-color: var(--amber); }
+#chat-gemini-key::placeholder { color: var(--text3); }
+#chat-save-key {
+  background: var(--amber-dim); color: var(--amber);
+  border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;
+  padding: 7px 12px; font-size: 0.75rem; font-weight: 700;
+  cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap;
+}
+#chat-save-key:hover { background: rgba(245,158,11,0.25); }
+#chat-messages {
+  flex: 1; overflow-y: auto; padding: 14px 14px 4px;
+  display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth;
+}
+#chat-messages::-webkit-scrollbar { width: 4px; }
+#chat-messages::-webkit-scrollbar-thumb { background: var(--purple-dim); border-radius: 4px; }
+.chat-msg { display: flex; gap: 8px; max-width: 100%; }
+.chat-msg.user { flex-direction: row-reverse; }
+.chat-msg-avatar {
+  width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; margin-top: 2px;
+}
+.chat-msg.bot .chat-msg-avatar { background: var(--purple-dim); color: var(--purple-light); }
+.chat-msg.user .chat-msg-avatar { background: var(--card); color: var(--text2); }
+.chat-msg-bubble {
+  padding: 10px 13px; border-radius: 16px;
+  font-size: 0.8rem; line-height: 1.6; color: var(--text);
+  max-width: calc(100% - 44px); white-space: pre-wrap; word-break: break-word;
+}
+.chat-msg.bot .chat-msg-bubble { background: var(--card); border: 1px solid var(--card-border); border-top-left-radius: 4px; }
+.chat-msg.user .chat-msg-bubble { background: var(--purple-dim); border: 1px solid rgba(124,58,237,0.25); border-top-right-radius: 4px; }
+.chat-msg.bot .chat-msg-bubble strong { color: var(--white); }
+.chat-typing .chat-msg-bubble { padding: 12px 16px; }
+.typing-dots { display: flex; gap: 4px; align-items: center; }
+.typing-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--purple-light); opacity: 0.5;
+  animation: dot-bounce 1.2s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+  0%,80%,100% { transform: translateY(0); opacity: 0.5; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+#chat-suggestions { padding: 6px 14px 8px; display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+.chat-chip {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 20px; padding: 5px 11px;
+  font-size: 0.72rem; font-weight: 600; color: var(--text2);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.chat-chip:hover { background: var(--purple-dim); color: var(--purple-light); border-color: var(--purple); }
+.chat-input-area {
+  padding: 10px 14px 14px; border-top: 1px solid var(--card-border);
+  display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0;
+}
+#chat-input {
+  flex: 1; background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 14px; padding: 10px 13px; font-size: 0.82rem;
+  font-family: 'Inter', sans-serif; color: var(--text); outline: none;
+  resize: none; line-height: 1.5; max-height: 90px; overflow-y: auto;
+  transition: border-color 0.2s;
+}
+#chat-input:focus { border-color: var(--purple); }
+#chat-input::placeholder { color: var(--text3); }
+#chat-send {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--purple), #9F67FA);
+  border: none; cursor: pointer; color: white;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.2s, transform 0.15s;
+  box-shadow: 0 2px 10px var(--purple-glow);
+}
+#chat-send:hover { opacity: 0.88; transform: scale(1.05); }
+#chat-send svg { width: 16px; height: 16px; }
+</style>
+
+<button id="chat-launcher" onclick="toggleChat()" title="Business Assistant">
+  <div class="chat-pulse"></div>
+  <svg class="icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+  </svg>
+  <svg class="icon-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+</button>
+
+<div id="chat-window">
+  <div class="chat-header">
+    <div class="chat-header-avatar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+      </svg>
+    </div>
+    <div style="flex:1;">
+      <div class="chat-header-name">LivingWell Assistant</div>
+      <div class="chat-header-status">Live data · Powered by Gemini</div>
+    </div>
+  </div>
+
+  <div id="chat-messages"></div>
+
+  <div id="chat-suggestions">
+    <span class="chat-chip" onclick="sendChip(this)">Orders today</span>
+    <span class="chat-chip" onclick="sendChip(this)">Top reps this week</span>
+    <span class="chat-chip" onclick="sendChip(this)">Revenue summary</span>
+    <span class="chat-chip" onclick="sendChip(this)">Pending deliveries</span>
+    <span class="chat-chip" onclick="sendChip(this)">Stock levels</span>
+  </div>
+
+  <div class="chat-input-area">
+    <textarea id="chat-input" rows="1" placeholder="Ask about orders, reps, deliveries..." onkeydown="chatKeyDown(event)" oninput="autoResizeChatInput(this)"></textarea>
+    <button id="chat-send" onclick="sendChatMessage()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+let chatOpen = false;
+let chatBusy = false;
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_KEY = 'AIzaSyCVGUWG8CDq5yxYq1FK2rZDRoDBMBi6H-o';
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  document.getElementById('chat-window').classList.toggle('open', chatOpen);
+  document.getElementById('chat-launcher').classList.toggle('active', chatOpen);
+  if (chatOpen && document.getElementById('chat-messages').children.length === 0) initChat();
+}
+
+function initChat() {
+  appendBotMessage('👋 Hi! I\'m your LivingWell business assistant.\n\nI have live access to your orders, sales reps, deliveries, payments, and stock data.\n\nWhat would you like to know?');
+}
+
+function getGeminiKey() { return GEMINI_KEY; }
+function saveGeminiKey() {}
+function checkGeminiKey() {}
+
+function appendBotMessage(text) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg bot';
+  div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble">${formatChatText(text)}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendUserMessage(text) {
+  const msgs = document.getElementById('chat-messages');
+  const initials = (currentUserProfile?.full_name||'A').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+  const div = document.createElement('div');
+  div.className = 'chat-msg user';
+  div.innerHTML = `<div class="chat-msg-avatar">${initials}</div><div class="chat-msg-bubble">${escapeHtml(text)}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showTyping() {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg bot chat-typing'; div.id = 'chat-typing-indicator';
+  div.innerHTML = `<div class="chat-msg-avatar">AI</div><div class="chat-msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
+}
+function hideTyping() { document.getElementById('chat-typing-indicator')?.remove(); }
+
+function formatChatText(t) {
+  return escapeHtml(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+}
+function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function autoResizeChatInput(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,90)+'px'; }
+function chatKeyDown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();} }
+function sendChip(el) { document.getElementById('chat-input').value=el.textContent; sendChatMessage(); }
+
+async function fetchBusinessContext(question) {
+  const q = question.toLowerCase();
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMon = day===0?-6:1-day;
+  const monday = new Date(now); monday.setDate(now.getDate()+diffToMon); monday.setHours(0,0,0,0);
+  const weekStart = monday.toISOString();
+  const context = {};
+  const tasks = [];
+
+  tasks.push(
+    api(`orders?select=id,status,total_price,created_at,rep_id,profiles(full_name,ref_code)&order=created_at.desc&limit=300`)
+      .then(d=>{context.orders=d||[];}).catch(()=>{context.orders=[];})
+  );
+
+  if (q.match(/rep|perform|top|leaderboard|sales|who/)) {
+    tasks.push(api(`profiles?role=eq.rep&is_active=eq.true&select=id,full_name,ref_code`).then(d=>{context.reps=d||[];}).catch(()=>{context.reps=[];}));
+  }
+  if (q.match(/deliver|logistics|partner|pending|assign|ship/)) {
+    tasks.push(api(`deliveries?select=id,status,order_id,remitted_to_admin,customer_paid,logistics_partners(name)&order=assigned_at.desc&limit=100`).then(d=>{context.deliveries=d||[];}).catch(()=>{context.deliveries=[];}));
+  }
+  if (q.match(/payment|revenue|money|cash|paid|remit|collect/)) {
+    tasks.push(api(`payments?select=amount,payment_method,created_at&order=created_at.desc&limit=100`).then(d=>{context.payments=d||[];}).catch(()=>{context.payments=[];}));
+  }
+  if (q.match(/stock|product|inventory|item|quantity/)) {
+    tasks.push(api(`stock?select=quantity,products(name,price)`).then(d=>{context.stock=d||[];}).catch(()=>{context.stock=[];}));
+  }
+
+  await Promise.all(tasks);
+
+  const summary = {};
+  const todayOrders = (context.orders||[]).filter(o=>o.created_at?.startsWith(today));
+  const weekOrders  = (context.orders||[]).filter(o=>o.created_at>=weekStart);
+  summary.orders_today = todayOrders.length;
+  summary.orders_this_week = weekOrders.length;
+  summary.total_orders_all_time = context.orders?.length||0;
+  summary.revenue_today = todayOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0);
+  summary.revenue_this_week = weekOrders.filter(o=>o.status==='delivered_payment_made').reduce((s,o)=>s+parseFloat(o.total_price||0),0);
+  summary.pending_orders = (context.orders||[]).filter(o=>o.status==='pending').length;
+  summary.cancelled_orders = (context.orders||[]).filter(o=>o.status==='cancelled').length;
+
+  if (context.reps) {
+    const repMap = {};
+    context.reps.forEach(r=>{repMap[r.id]={name:r.full_name,ref:r.ref_code,orders:0,value:0};});
+    (context.orders||[]).filter(o=>o.status==='delivered_payment_made').forEach(o=>{
+      if(repMap[o.rep_id]){repMap[o.rep_id].orders++;repMap[o.rep_id].value+=parseFloat(o.total_price||0);}
+    });
+    summary.rep_performance = Object.values(repMap).sort((a,b)=>b.orders-a.orders);
+  }
+  if (context.deliveries) {
+    summary.pending_deliveries = context.deliveries.filter(d=>d.status==='assigned').length;
+    summary.delivered_count = context.deliveries.filter(d=>['delivered_payment_made','delivered_awaiting_payment'].includes(d.status)).length;
+    summary.unremitted_to_admin = context.deliveries.filter(d=>d.customer_paid&&!d.remitted_to_admin).length;
+  }
+  if (context.payments) {
+    summary.total_payments_recorded = context.payments.reduce((s,p)=>s+parseFloat(p.amount||0),0);
+  }
+  if (context.stock) {
+    summary.stock_levels = context.stock.map(s=>({product:s.products?.name,qty:s.quantity,price:s.products?.price}));
+    summary.low_stock_items = summary.stock_levels.filter(s=>s.qty<=10);
+  }
+  return summary;
+}
+
+async function sendChatMessage() {
+  if (chatBusy) return;
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const key = getGeminiKey();
+
+  input.value=''; input.style.height='auto';
+  appendUserMessage(text);
+  chatBusy=true; showTyping();
+
+  try {
+    const context = await fetchBusinessContext(text);
+    const today = new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const systemPrompt = `You are a smart, concise business assistant for LivingWell, a Nigerian health/wellness product company. Today is ${today}. Currency is Nigerian Naira (₦).
+
+Live business data:
+${JSON.stringify(context,null,2)}
+
+Rules: Be concise. Use **bold** for key figures. Format naira as ₦1,250,000. Never invent data. Keep responses under 200 words unless a detailed breakdown is explicitly requested.`;
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contents:[{role:'user',parts:[{text:systemPrompt+'\n\nQuestion: '+text}]}],
+        generationConfig:{maxOutputTokens:512,temperature:0.3}
+      })
+    });
+    const data = await res.json();
+    hideTyping();
+
+    if (!res.ok) {
+      const errMsg = data?.error?.message||'Gemini API error';
+      if (errMsg.includes('API_KEY_INVALID')||errMsg.includes('API key')) {
+        appendBotMessage('❌ Gemini API key error. Please contact your administrator.');
+      } else {
+        appendBotMessage('⚠️ Error: '+errMsg);
+      }
+      chatBusy=false; return;
+    }
+
+    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text||'Sorry, I could not generate a response.';
+    appendBotMessage(reply);
+  } catch(e) {
+    hideTyping();
+    appendBotMessage('⚠️ Something went wrong: '+e.message);
+  }
+  chatBusy=false;
+}
+</script>
+
 </body>
 </html>
