@@ -6477,26 +6477,48 @@ function extractWeekRange(q) {
   return null;
 }
 
-// ── FETCH ALL BUSINESS DATA — comprehensive, pre-aggregated ──
+// ── FETCH BUSINESS DATA — smart context routing (only fetch what the question needs) ──
 async function fetchAllBusinessData(q) {
   const today = getToday();
   const ws    = getWeekStart();
   const ms    = getMonthStart();
-  const specificDate  = extractDate(q);
-  const specificWeek  = extractWeekRange(q);
+  const specificDate = extractDate(q);
+  const specificWeek = extractWeekRange(q);
 
-  // Fetch everything in parallel
+  // ── Detect what the question is about ──
+  const needsOrders     = /order|customer|sale|pending|assign|cancel|today|week|month|date|how many|count/i.test(q);
+  const needsRevenue    = /revenue|money|payment|paid|income|naira|₦|earn|collect|total/i.test(q);
+  const needsDeliveries = /deliver|remit|unremit|dispatch|collected|partner.*pay|pay.*partner/i.test(q);
+  const needsStock      = /stock|warehouse|inventory|quantity|item|left|remaining/i.test(q);
+  const needsReps       = /rep|agent|staff|perform|leaderboard|top|rank|who.*best|best.*who/i.test(q);
+  const needsLogistics  = /logistics|partner|nancy|dispatch|sent.*to|stock.*partner/i.test(q);
+
+  // If nothing specific matched — fetch everything (general/summary question)
+  const fetchAll = ![needsOrders,needsRevenue,needsDeliveries,needsStock,needsReps,needsLogistics].some(Boolean);
+
+  // ── Fetch only what's needed in parallel ──
   const [
     ordersAll, paymentsAll, repsAll,
-    deliveriesAll, stockAll, logisticsAll, partnersAll
+    deliveriesAll, stockAll, logisticsAll
   ] = await Promise.all([
-    api(`orders?select=id,status,total_price,customer_name,created_at,rep_id,profiles(full_name,ref_code),products(name)&order=created_at.desc`).catch(()=>[]),
-    api(`payments?select=amount_received,payment_method,confirmed_at,order_id&order=confirmed_at.desc`).catch(()=>[]),
-    api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active&order=full_name`).catch(()=>[]),
-    api(`deliveries?select=id,status,assigned_at,customer_paid,remitted_to_admin,logistics_partner_id,logistics_partners(name),orders(id,customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[]),
-    api(`stock?select=quantity,products(name,price,is_active)&order=products(name)`).catch(()=>[]),
-    api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)&order=sent_at.desc`).catch(()=>[]),
-    api(`logistics_partners?select=id,name,phone,is_active&order=name`).catch(()=>[])
+    (fetchAll || needsOrders || needsRevenue || needsReps)
+      ? api(`orders?select=id,status,total_price,customer_name,created_at,rep_id,profiles(full_name,ref_code),products(name)&order=created_at.desc`).catch(()=>[])
+      : Promise.resolve([]),
+    (fetchAll || needsRevenue)
+      ? api(`payments?select=amount_received,payment_method,confirmed_at,order_id&order=confirmed_at.desc`).catch(()=>[])
+      : Promise.resolve([]),
+    (fetchAll || needsReps)
+      ? api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active&order=full_name`).catch(()=>[])
+      : Promise.resolve([]),
+    (fetchAll || needsDeliveries)
+      ? api(`deliveries?select=id,status,assigned_at,customer_paid,remitted_to_admin,logistics_partner_id,logistics_partners(name),orders(id,customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[])
+      : Promise.resolve([]),
+    (fetchAll || needsStock)
+      ? api(`stock?select=quantity,products(name,price,is_active)&order=products(name)`).catch(()=>[])
+      : Promise.resolve([]),
+    (fetchAll || needsLogistics || needsStock)
+      ? api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)&order=sent_at.desc`).catch(()=>[])
+      : Promise.resolve([]),
   ]);
 
   // ── Helpers ──
@@ -6707,7 +6729,7 @@ async function sendChatMessage() {
     const systemPrompt =
 `You are an intelligent business assistant for LivingWell, a Nigerian health/wellness company. Today is ${now}. Currency is Nigerian Naira (₦).
 
-You have FULL access to the live business data below. Answer ANY question accurately using this data.
+You have access to the relevant live business data below (fetched based on the question). Answer accurately using only what's provided. If data for a specific area is missing, say it wasn't needed for this query and suggest they ask specifically.
 
 KEY RULES:
 - Bold all key numbers and names using **bold**
