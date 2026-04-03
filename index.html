@@ -2820,6 +2820,12 @@ function initApp() {
   loadDashboard();
   loadFinancials();
   startAutoRefresh();
+
+  // Chat visible only to olujide
+  const uname = (currentUserProfile.full_name || '').toLowerCase();
+  if (uname.includes('olujide')) {
+    document.getElementById('chat-launcher').style.display = 'flex';
+  }
   loadLogisticsPartners();
   loadProducts();
   // Show weekly performance leaderboard every Saturday from 3pm
@@ -6307,7 +6313,7 @@ function closeWeeklyPerf() {
 #chat-send svg { width: 16px; height: 16px; }
 </style>
 
-<button id="chat-launcher" onclick="toggleChat()" title="Business Assistant">
+<button id="chat-launcher" onclick="toggleChat()" title="Business Assistant" style="display:none;">
   <div class="chat-pulse"></div>
   <svg class="icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
