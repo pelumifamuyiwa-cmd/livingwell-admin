@@ -5056,19 +5056,29 @@ async function loadPerformance() {
       .map(r => {
         const completed = r.delivered_paid + r.delivered_awaiting;
         const allO = r.total + r.cancelled;
-        const completionRate  = allO > 0 ? Math.round((completed / allO) * 100) : 0;
+        const completionRate   = allO > 0 ? Math.round((completed / allO) * 100) : 0;
         const cancellationRate = allO > 0 ? Math.round((r.cancelled / allO) * 100) : 0;
-        // SPI = (0.37 × AdjCR) + (0.33 × RevReal × 100) + (0.25 × ADVI) − (0.05 × CancelRate × 100)
-        // AdjCR    = completion% × (orders / maxOrders) — volume-weighted completion
-        // RevReal  = val_delivered / val_ordered — cash conversion rate
-        // ADVI     = (rep val_delivered / pool total val_delivered) × 100 — pool contribution share
-        // Cancel   = penalty for cancellations
+
+        // ── SPI Formula ──
+        // AdjCR   = (delivered/allOrders) × (allOrders/maxOrders) × 100
+        //           rewards both completion rate AND volume — low volume = low AdjCR
+        // AdjRevReal = (val_delivered/val_ordered) × (allOrders/maxOrders) × 100
+        //           volume-weights RevReal so 100% on 1 order ≠ 100% on 17 orders
+        // ADVI    = (val_delivered / pool_total) × 100
+        //           rep's actual cash contribution to the business
+        // Cancel  = penalty for cancellations
+
+        const volFactor  = allO / maxOrd; // 0→1 scale: how active this rep is vs the busiest
         const cr         = allO > 0 ? completed / allO : 0;
-        const adjCR      = cr * (r.total / maxOrd) * 100;
-        const revReal    = r.value_ordered > 0 ? r.value / r.value_ordered : 0;
+        const adjCR      = cr * volFactor * 100;
+        const rawRevReal = r.value_ordered > 0 ? r.value / r.value_ordered : 0;
+        const adjRevReal = rawRevReal * volFactor * 100; // volume-weighted revenue realization
         const advi       = (r.value / poolRevenue) * 100;
         const cancelRate = allO > 0 ? r.cancelled / allO : 0;
-        const spi        = parseFloat(((0.37 * adjCR) + (0.33 * revReal * 100) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1));
+
+        const spi = parseFloat(
+          ((0.37 * adjCR) + (0.33 * adjRevReal) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1)
+        );
         return { ...r, completed, completionRate, cancellationRate, spi };
       })
       .sort((a, b) => b.spi - a.spi);
@@ -6690,10 +6700,12 @@ async function fetchAllBusinessData(q) {
       const adjCR = cr * (r.total_orders / maxOrders) * 100;
       const revReal = r.val_ordered > 0 ? r.revenue / r.val_ordered : 0;
       const cancelRate = allO > 0 ? r.cancelled / allO : 0;
-      // ADVI = rep's share of total pool revenue × 100
-      const poolRev = Object.values(repMap).reduce((s,x) => s + x.revenue, 0) || 1;
-      const advi    = (r.revenue / poolRev) * 100;
-      const spi     = parseFloat(((0.37 * adjCR) + (0.33 * revReal * 100) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1));
+      const maxOrdAI   = Math.max(...Object.values(repMap).map(x => x.total_orders + (x.cancelled||0)), 1);
+      const volFactor  = allO / maxOrdAI;
+      const adjRevReal = revReal * volFactor * 100;
+      const poolRev    = Object.values(repMap).reduce((s,x) => s + x.revenue, 0) || 1;
+      const advi       = (r.revenue / poolRev) * 100;
+      const spi        = parseFloat(((0.37 * adjCR) + (0.33 * adjRevReal) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1));
       return { ...r, delivered, allOrders:allO, completionRate:Math.round(cr*100), cancelRate:Math.round(cancelRate*100), advi:advi.toFixed(1), spi };
     })
     .sort((a,b) => b.spi - a.spi);
