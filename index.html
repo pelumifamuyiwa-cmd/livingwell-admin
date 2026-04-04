@@ -2061,7 +2061,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <div class="card">
           <div class="card-header">
             <div class="card-title">🏆 Leaderboard</div>
-            <div class="card-sub">Ranked by weighted score (volume × completion)</div>
+            <div class="card-sub">SPI = (0.37×AdjCR) + (0.33×RevReal) + (0.25×ADVI) − (0.05×Cancel)</div>
           </div>
           <div id="full-leaderboard">
             <div class="loading">Loading performance data...</div>
@@ -2176,26 +2176,46 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 <!-- Assign Logistics Modal -->
 <div class="modal-overlay" id="modal-assign">
-  <div class="modal">
+  <div class="modal" style="max-width:520px;">
     <div class="modal-header">
-      <div class="modal-title">Assign Logistics Partner</div>
-      <div class="modal-sub">Select a logistics partner for this delivery</div>
+      <div>
+        <div class="modal-title">Assign to Logistics</div>
+        <div class="modal-sub" id="assign-customer-sub">Cart ready for assignment</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-assign')">✕</button>
     </div>
+
+    <!-- Hidden fields -->
     <input type="hidden" id="assign-order-id">
-    <div class="form-group">
-      <label class="form-label">Logistics Partner</label>
-      <select class="form-input" id="assign-logistics-select">
-        <option value="">Select partner...</option>
-      </select>
+    <input type="hidden" id="assign-batch-order-ids">
+
+    <!-- Cart preview -->
+    <div style="padding:16px 20px 0;">
+      <div style="font-size:0.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🛒 Order Cart</div>
+      <div id="assign-cart-items" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;">
+        <span style="font-size:0.82rem;font-weight:600;color:var(--text2);">Total to Collect</span>
+        <span id="assign-grand-total" style="font-size:1rem;font-weight:800;color:var(--purple-light);font-family:'JetBrains Mono',monospace;">₦0</span>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Notes (optional)</label>
-      <textarea class="form-input" id="assign-notes" rows="2" placeholder="Any special instructions..."></textarea>
+
+    <div style="padding:16px 20px;">
+      <div class="form-group">
+        <label class="form-label">Logistics Partner</label>
+        <select class="form-input" id="assign-logistics-select">
+          <option value="">Select partner...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <textarea class="form-input" id="assign-notes" rows="2" placeholder="Any special instructions..."></textarea>
+      </div>
+      <div id="whatsapp-preview" style="display:none;margin-top:8px;padding:12px;background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.2);border-radius:10px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#25D366;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">WhatsApp Message Preview</div>
+        <div id="whatsapp-msg-preview" style="font-size:0.8rem;color:var(--text2);line-height:1.5;white-space:pre-wrap;"></div>
+      </div>
     </div>
-    <div id="whatsapp-preview" style="display:none;margin-top:12px;padding:12px;background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.2);border-radius:10px;">
-      <div style="font-size:0.72rem;font-weight:700;color:#25D366;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">WhatsApp Message Preview</div>
-      <div id="whatsapp-msg-preview" style="font-size:0.8rem;color:var(--text2);line-height:1.5;"></div>
-    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-assign')">Cancel</button>
       <a id="whatsapp-send-btn" href="#" target="_blank" class="btn btn-green" style="display:none;text-decoration:none;" onclick="confirmAssign()">
@@ -2949,12 +2969,17 @@ async function loadDashboard() {
     allOrders.forEach(o => {
       if (!o.rep_id || !o.profiles?.full_name) return;
       const id = o.rep_id;
-      if (!repOrders[id]) repOrders[id] = { name: o.profiles.full_name, ref: o.profiles?.ref_code || '—', count: 0, delivered: 0 };
+      if (!repOrders[id]) repOrders[id] = { name: o.profiles.full_name, ref: o.profiles?.ref_code||'—', count:0, delivered:0, cancelled:0, value:0 };
       repOrders[id].count++;
-      if (o.status === 'delivered_payment_made' || o.status === 'delivered_awaiting_payment') repOrders[id].delivered++;
+      if (o.status==='delivered_payment_made'||o.status==='delivered_awaiting_payment') { repOrders[id].delivered++; repOrders[id].value+=parseFloat(o.total_price||0); }
+      if (o.status==='cancelled') repOrders[id].cancelled++;
     });
     const sorted = Object.values(repOrders)
-      .map(r => ({ ...r, weightedScore: r.count > 0 ? (r.delivered * r.delivered) / r.count : 0 }))
+      .map(r => {
+        const cf = r.count > 0 ? r.delivered / r.count : 0;
+        const xf = r.count > 0 ? 1 - (r.cancelled / r.count) : 0;
+        return { ...r, weightedScore: (r.value * r.value) * cf * xf };
+      })
       .sort((a,b) => b.weightedScore - a.weightedScore)
       .slice(0,5);
     const lb = document.getElementById('dash-leaderboard');
@@ -3383,7 +3408,8 @@ async function submitRecordPayment() {
 }
 
 // ── ASSIGN LOGISTICS ──
-let pendingWhatsAppUrl = null; // stores WA url set during modal interaction
+let pendingWhatsAppUrl = null;
+let currentBatchOrderIds = []; // all order IDs in the current cart
 
 function openAssignModalById(orderId) {
   const o = allOrders.find(x => x.id === orderId);
@@ -3394,35 +3420,54 @@ function openAssignModalById(orderId) {
 function openAssignModal(orderId, customerName, productName, location, amount) {
   currentAssignOrderId = orderId;
   pendingWhatsAppUrl = null;
-  document.getElementById('assign-order-id').value = orderId;
-  document.getElementById('modal-assign').classList.add('open');
 
-  // Find ALL pending orders for same customer at same location (multi-product cart)
+  // ── Find ALL pending orders for same customer at same location ──
   const sibling = allOrders.filter(o =>
     o.status === 'pending' &&
     o.customer_name === customerName &&
     o.delivery_location === location &&
     o.id !== orderId
   );
-  // Bundle: this order + siblings
-  const allOrdersForCustomer = [
-    { name: productName, qty: allOrders.find(o=>o.id===orderId)?.quantity||1, price: amount },
-    ...sibling.map(o => ({ name: o.products?.name||'—', qty: o.quantity||1, price: o.total_price||0 }))
-  ];
-  const grandTotal = allOrdersForCustomer.reduce((s,o) => s + parseFloat(o.price||0), 0);
 
+  // Full cart: clicked order + siblings
+  const clickedOrder = allOrders.find(o => o.id === orderId);
+  const cartOrders = [
+    { id: orderId, name: productName, qty: clickedOrder?.quantity || 1, price: parseFloat(amount || 0) },
+    ...sibling.map(o => ({ id: o.id, name: o.products?.name || '—', qty: o.quantity || 1, price: parseFloat(o.total_price || 0) }))
+  ];
+  currentBatchOrderIds = cartOrders.map(o => o.id);
+  const grandTotal = cartOrders.reduce((s, o) => s + o.price, 0);
+
+  // Populate modal fields
+  document.getElementById('assign-order-id').value = orderId;
+  document.getElementById('assign-batch-order-ids').value = JSON.stringify(currentBatchOrderIds);
+  document.getElementById('assign-customer-sub').textContent = customerName + ' · ' + location;
+  document.getElementById('assign-grand-total').textContent = '₦' + grandTotal.toLocaleString();
+
+  // Render cart items
+  document.getElementById('assign-cart-items').innerHTML = cartOrders.map((o, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--card);border:1px solid var(--card-border);border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:0.65rem;font-weight:700;color:var(--purple-light);background:var(--purple-dim);border-radius:4px;padding:2px 7px;">#${i + 1}</span>
+        <span style="font-size:0.82rem;font-weight:600;">${o.name}</span>
+        <span style="font-size:0.72rem;color:var(--text3);">×${o.qty}</span>
+      </div>
+      <span style="font-size:0.82rem;font-weight:700;color:var(--green);font-family:'JetBrains Mono',monospace;">₦${o.price.toLocaleString()}</span>
+    </div>`).join('');
+
+  // Partner select
   const select = document.getElementById('assign-logistics-select');
   select.innerHTML = '<option value="">Select partner...</option>' +
-    logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone||''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
+    logisticsPartners.map(l => `<option value="${l.id}" data-phone="${l.phone || ''}" data-name="${l.name}">${l.name} — ${l.coverage_area}</option>`).join('');
 
   function buildWAMsg(lname) {
-    const itemLines = allOrdersForCustomer.map(function(o,i) {
-      return '   ' + (i+1) + '. ' + o.name + ' x ' + o.qty + ' = N' + parseFloat(o.price).toLocaleString();
-    }).join('\n');
-    var multiNote = allOrdersForCustomer.length > 1
-      ? allOrdersForCustomer.length + ' Products Ordered:\n' + itemLines + '\n\nTotal to collect: N' + grandTotal.toLocaleString()
-      : 'Product: ' + productName + ' x ' + ((allOrders.find(function(x){return x.id===orderId;})||{}).quantity||1) + '\nAmount to collect: N' + parseFloat(amount).toLocaleString();
-    return 'Hello ' + lname + ',\n\nNew delivery assigned:\n\nCustomer: ' + customerName + '\nLocation: ' + location + '\n\n' + multiNote + '\n\nOpen your portal:\nhttps://livingwell-logistics.vercel.app\n\nThank you!';
+    const itemLines = cartOrders.map((o, i) =>
+      '   ' + (i + 1) + '. ' + o.name + ' x' + o.qty + ' = ₦' + o.price.toLocaleString()
+    ).join('\n');
+    const body = cartOrders.length > 1
+      ? cartOrders.length + ' Products:\n' + itemLines + '\n\nTotal to collect: ₦' + grandTotal.toLocaleString()
+      : 'Product: ' + cartOrders[0].name + ' x' + cartOrders[0].qty + '\nAmount to collect: ₦' + grandTotal.toLocaleString();
+    return 'Hello ' + lname + ',\n\nNew delivery assigned:\n\nCustomer: ' + customerName + '\nLocation: ' + location + '\n\n' + body + '\n\nOpen your portal:\nhttps://livingwell-logistics.vercel.app\n\nThank you!';
   }
 
   function updateWAPreview() {
@@ -3438,47 +3483,60 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
     const msg = buildWAMsg(lname);
     document.getElementById('whatsapp-msg-preview').textContent = msg;
     document.getElementById('whatsapp-preview').style.display = 'block';
-    const cleanPhone = phone.replace(/[^0-9]/g,'').replace(/^0/, '234');
+    const cleanPhone = phone.replace(/[^0-9]/g, '').replace(/^0/, '234');
     pendingWhatsAppUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     document.getElementById('whatsapp-send-btn').href = pendingWhatsAppUrl;
     document.getElementById('whatsapp-send-btn').style.display = 'inline-flex';
   }
 
   select.onchange = updateWAPreview;
+  if (logisticsPartners.length === 1) { select.selectedIndex = 1; updateWAPreview(); }
 
-  // Auto-select first partner if only one exists
-  if (logisticsPartners.length === 1) {
-    select.selectedIndex = 1;
-    updateWAPreview();
-  }
+  document.getElementById('modal-assign').classList.add('open');
 }
 
 async function saveAssignment() {
-  const orderId = document.getElementById('assign-order-id').value;
   const logisticsId = document.getElementById('assign-logistics-select').value;
   const notes = document.getElementById('assign-notes').value;
   if (!logisticsId) { showToast('Please select a logistics partner', 'error'); return; }
 
-  // ── Open WhatsApp window IMMEDIATELY (before any await) to bypass popup blocker ──
-  // Browsers only allow window.open from a direct user gesture, not after async calls
+  let batchIds = [];
+  try { batchIds = JSON.parse(document.getElementById('assign-batch-order-ids').value || '[]'); } catch(e) {}
+  if (!batchIds.length) batchIds = [document.getElementById('assign-order-id').value];
+
+  // Open WhatsApp immediately before any async to bypass popup blocker
   let waWindow = null;
-  if (pendingWhatsAppUrl) {
-    waWindow = window.open('about:blank', '_blank');
-  }
+  if (pendingWhatsAppUrl) waWindow = window.open('about:blank', '_blank');
 
   try {
-    await api(`deliveries`, 'POST', { order_id: orderId, logistics_partner_id: logisticsId, notes, status: 'assigned' }, { Prefer: 'return=minimal' });
-    await api(`orders?id=eq.${orderId}`, 'PATCH', { status: 'assigned' }, { Prefer: 'return=minimal' });
+    // Generate one batch_id to group all orders in this cart together
+    const batchId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+    // Create one delivery record per order — all share the same batch_id
+    await Promise.all(batchIds.map(oid =>
+      api('deliveries', 'POST', {
+        order_id: oid,
+        logistics_partner_id: logisticsId,
+        notes,
+        status: 'assigned',
+        batch_id: batchId
+      }, { Prefer: 'return=minimal' })
+    ));
+
+    // Mark all orders as assigned
+    await Promise.all(batchIds.map(oid =>
+      api(`orders?id=eq.${oid}`, 'PATCH', { status: 'assigned' }, { Prefer: 'return=minimal' })
+    ));
+
     closeModal('modal-assign');
-    showToast('Order assigned! Opening WhatsApp...', 'success');
+    showToast(batchIds.length > 1 ? `${batchIds.length} orders assigned as one batch!` : 'Order assigned!', 'success');
     loadOrders();
-    // Now navigate the already-opened window to the WhatsApp URL
+
     if (waWindow && pendingWhatsAppUrl) {
       waWindow.location.href = pendingWhatsAppUrl;
       pendingWhatsAppUrl = null;
     }
   } catch(e) {
-    // Close the blank window if assignment failed
     if (waWindow) waWindow.close();
     showToast('Failed to assign: ' + e.message, 'error');
   }
@@ -4996,9 +5054,14 @@ async function loadPerformance() {
         const completed = r.delivered_paid + r.delivered_awaiting;
         const completionRate = r.total > 0 ? Math.round((completed / r.total) * 100) : 0;
         const cancellationRate = r.total > 0 ? Math.round((r.cancelled / r.total) * 100) : 0;
-        // Weighted score: (completed²) ÷ total — rewards both volume AND completion rate
-        const weightedScore = r.total > 0 ? (completed * completed) / r.total : 0;
-        return { ...r, completed, completionRate, cancellationRate, weightedScore };
+        // Performance Score = val_delivered² × (delivered÷orders) × (1 - cancelled÷orders)
+        // — val_delivered² ensures high earners rank higher
+        // — delivered÷orders rewards order follow-through
+        // — (1 - cancelled÷orders) penalises cancellations
+        const completionFactor   = r.total > 0 ? completed / r.total : 0;
+        const cancellationFactor = r.total > 0 ? 1 - (r.cancelled / r.total) : 0;
+        const weightedScore = (r.value * r.value) * completionFactor * cancellationFactor;
+        return { ...r, completed, completionRate, cancellationRate, weightedScore, completionFactor, cancellationFactor };
       })
       .sort((a, b) => b.weightedScore - a.weightedScore);
 
@@ -5014,7 +5077,7 @@ async function loadPerformance() {
       <div class="stat-card purple"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg></div><div class="stat-label">Total Orders</div><div class="stat-value">${totalOrders}</div><div class="stat-sub">All reps combined</div></div>
       <div class="stat-card green"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div class="stat-label">Delivered</div><div class="stat-value">${totalDelivered}</div><div class="stat-sub">${totalOrders > 0 ? Math.round((totalDelivered/totalOrders)*100) : 0}% of all orders</div></div>
       <div class="stat-card amber"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="stat-label">Avg Completion</div><div class="stat-value">${avgCompletion}%</div><div class="stat-sub">Across all reps</div></div>
-      <div class="stat-card blue"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><div class="stat-label">Top Rep</div><div class="stat-value" style="font-size:0.9rem;">${topRep ? topRep.full_name.split(' ')[0] : '—'}</div><div class="stat-sub">${topRep ? 'score: ' + topRep.weightedScore.toFixed(1) : ''}</div></div>
+      <div class="stat-card blue"><div class="stat-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><div class="stat-label">Top Rep</div><div class="stat-value" style="font-size:0.9rem;">${topRep ? topRep.full_name.split(' ')[0] : '—'}</div><div class="stat-sub">${topRep ? topRep.spi + 'pts SPI' : ''}</div></div>
       <div class="stat-card green"><div class="stat-icon-wrap"><span style="font-weight:800;font-size:0.9rem;">₦</span></div><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:1rem;">₦${totalRevenue.toLocaleString()}</div><div class="stat-sub">Delivered orders</div></div>
     `;
 
@@ -5032,12 +5095,16 @@ async function loadPerformance() {
         <div style="flex:1;min-width:0;">
           <div class="leader-name">${r.full_name}</div>
           <div class="leader-ref">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
-          <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-            <div style="flex:1;height:5px;background:var(--card-border);border-radius:99px;max-width:160px;">
-              <div style="width:${r.completionRate}%;height:100%;background:${barColor};border-radius:99px;"></div>
+          <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="flex:1;height:5px;background:var(--card-border);border-radius:99px;max-width:120px;min-width:60px;">
+              <div style="width:${Math.min(r.completionRate,100)}%;height:100%;background:${barColor};border-radius:99px;"></div>
             </div>
-            <span style="font-size:0.7rem;font-weight:700;color:${rateColor};">${r.completionRate}%</span>
-            <span style="font-size:0.65rem;color:var(--text3);">score: ${r.weightedScore.toFixed(1)}</span>
+            <span style="font-size:0.7rem;font-weight:700;color:${rateColor};">${r.completionRate}% completion</span>
+            <span style="font-size:0.65rem;font-weight:600;color:var(--red);">${r.cancellationRate}% cancelled</span>
+          </div>
+          <div style="margin-top:3px;font-size:0.6rem;color:var(--text3);">
+            SPI Score: <strong style="color:var(--purple-light);">${r.spi}pts</strong>
+            <span style="margin-left:6px;">AdjCR: ${r.adjCR} · RevReal: ${r.revReal}% · ADVI: ${r.advi}</span>
           </div>
         </div>
         <div style="display:flex;gap:12px;text-align:center;flex-shrink:0;">
@@ -6497,7 +6564,7 @@ async function fetchAllBusinessData(q) {
   const needsRevenue    = /revenue|money|payment|paid|income|naira|₦|earn|collect|total/i.test(q);
   const needsDeliveries = /deliver|remit|unremit|dispatch|collected|partner.*pay|pay.*partner/i.test(q);
   const needsStock      = /stock|warehouse|inventory|quantity|item|left|remaining/i.test(q);
-  const needsReps       = /rep|agent|staff|perform|leaderboard|top|rank|who.*best|best.*who/i.test(q);
+  const needsReps       = /rep|agent|staff|perform|leaderboard|top|rank|who.*best|best.*who|all.*sales|sales.*all|spool|every.*rep|list.*rep|rep.*list/i.test(q);
   const needsLogistics  = /logistics|partner|nancy|dispatch|sent.*to|stock.*partner/i.test(q);
 
   // If nothing specific matched — fetch everything (general/summary question)
@@ -6577,29 +6644,51 @@ async function fetchAllBusinessData(q) {
     return Object.keys(m).length ? m : null;
   };
 
-  // ── Rep performance — matches dashboard exactly ──
+  // ── Rep performance — ALL reps including zero-activity ones ──
   const activeReps = repsAll.filter(r=>r.is_active);
   const repMap={};
-  activeReps.forEach(r=>{
+  // Include ALL reps so chatbot can report "no sales" for inactive/zero-activity reps
+  repsAll.forEach(r=>{
     repMap[r.id]={
-      name:r.full_name, ref:r.ref_code,
-      total_orders:0, pending:0, assigned:0,
-      delivered_paid:0, delivered_awaiting:0, revenue:0
+      name:r.full_name, ref:r.ref_code, is_active:r.is_active,
+      total_orders:0, pending:0, assigned:0, cancelled:0,
+      delivered_paid:0, delivered_awaiting:0, revenue:0, val_ordered:0
     };
   });
   ordersAll.forEach(o=>{
     if(!repMap[o.rep_id]) return;
-    if(o.status==='cancelled') return;
+    const price = parseFloat(o.total_price||0);
+    repMap[o.rep_id].val_ordered += price;
+    if(o.status==='cancelled'){ repMap[o.rep_id].cancelled++; return; }
     repMap[o.rep_id].total_orders++;
     if(o.status==='pending')                      repMap[o.rep_id].pending++;
     if(o.status==='assigned')                     repMap[o.rep_id].assigned++;
-    if(o.status==='delivered_payment_made'){       repMap[o.rep_id].delivered_paid++; repMap[o.rep_id].revenue+=parseFloat(o.total_price||0);}
+    if(o.status==='delivered_payment_made'){       repMap[o.rep_id].delivered_paid++; repMap[o.rep_id].revenue+=price;}
     if(o.status==='delivered_awaiting_payment')   repMap[o.rep_id].delivered_awaiting++;
   });
-  // Weighted score: (delivered²) ÷ total_orders — same formula as leaderboard
+
+  // ── SPI Formula (Sales Performance Index) ──
+  // SPI = (0.37 × AdjCR) + (0.33 × RevReal × 100) + (0.25 × ADVI) − (0.05 × CancelRate × 100)
+  // AdjCR = completionRate × (orders / maxOrders)
+  // RevReal = val_delivered / val_ordered
+  // ADVI = (AOV / maxAOV) × 100
+  const maxOrders = Math.max(...Object.values(repMap).map(r=>r.total_orders), 1);
+  const maxAOV    = Math.max(...Object.values(repMap).map(r=> r.delivered_paid > 0 ? r.revenue/r.delivered_paid : 0), 1);
+
   const repRanked = Object.values(repMap)
-    .map(r => ({ ...r, weightedScore: r.total_orders > 0 ? (r.delivered_paid * r.delivered_paid) / r.total_orders : 0 }))
-    .sort((a,b) => b.weightedScore - a.weightedScore);
+    .map(r => {
+      const allO  = r.total_orders + r.cancelled;
+      const delivered = r.delivered_paid + r.delivered_awaiting;
+      const cr    = allO > 0 ? delivered / allO : 0;
+      const adjCR = cr * (r.total_orders / maxOrders) * 100;
+      const revReal = r.val_ordered > 0 ? r.revenue / r.val_ordered : 0;
+      const aov   = r.delivered_paid > 0 ? r.revenue / r.delivered_paid : 0;
+      const advi  = (aov / maxAOV) * 100;
+      const cancelRate = allO > 0 ? r.cancelled / allO : 0;
+      const spi   = (0.37 * adjCR) + (0.33 * revReal * 100) + (0.25 * advi) - (0.05 * cancelRate * 100);
+      return { ...r, delivered, allOrders:allO, completionRate:Math.round(cr*100), adjCR:adjCR.toFixed(1), revReal:Math.round(revReal*100), advi:advi.toFixed(1), cancelRate:Math.round(cancelRate*100), spi:parseFloat(spi.toFixed(1)) };
+    })
+    .sort((a,b) => b.spi - a.spi);
 
   // ── Logistics stock by partner ──
   const logByPartner={};
@@ -6667,11 +6756,12 @@ async function fetchAllBusinessData(q) {
     },
 
     reps: {
-      total:   repsAll.length,
-      active:  activeReps.length,
-      inactive:repsAll.filter(r=>!r.is_active).length,
-      all_reps: repRanked,
-      top_rep:  repRanked[0]||null,
+      total:    repsAll.length,
+      active:   activeReps.length,
+      inactive: repsAll.filter(r=>!r.is_active).length,
+      all_reps: repRanked, // sorted by SPI score — includes ALL reps even zero-activity
+      top_rep:  repRanked.filter(r=>r.spi>0)[0]||null,
+      zero_activity: repRanked.filter(r=>r.total_orders===0&&r.cancelled===0).map(r=>r.name),
     },
 
     stock: {
@@ -6746,7 +6836,7 @@ KEY RULES:
 - Format all money as ₦1,250,000
 - Never guess — only use numbers from the data
 - If a specific date or week was asked about, use specific_date or specific_week fields
-- For rep questions: use the reps.all_reps array — ranked by weightedScore (formula: delivered_paid² ÷ total_orders). This rewards both volume AND completion rate. A rep with 4 deliveries from 7 orders scores higher than one with 1 delivery from 1 order.
+- For rep questions: use reps.all_reps — ranked by SPI (Sales Performance Index). SPI = (0.37×AdjCR) + (0.33×RevRealization×100) + (0.25×ADVI) − (0.05×CancelRate×100). Each rep has: spi, completionRate, revReal, advi, cancelRate, total_orders, delivered, cancelled, revenue, val_ordered. Reps with zero activity are in reps.zero_activity array. If asked about a specific date, filter orders by date but still show ALL reps — those with no orders on that date had zero sales that day.
 - For logistics partner stock: use logistics.by_partner — each key is a partner name
 - REVENUE SOURCE: revenue figures come from orders with status "delivered_payment_made" using total_price — NOT the payments table. revenue.today.total = sum of today's paid orders. revenue.all_time.awaiting_payment = money not yet collected.
 - For unremitted: use deliveries.unremitted_list and unremitted_value
