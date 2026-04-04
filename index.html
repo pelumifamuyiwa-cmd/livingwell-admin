@@ -3225,8 +3225,86 @@ function renderOrders(orders) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text3);">No orders found</td></tr>';
     return;
   }
-  tbody.innerHTML = orders.map(o => `
-    <tr>
+
+  // ── Group pending orders by customer+location so multi-product orders show as a cart ──
+  // Non-pending orders remain flat rows
+  const pendingOrders = orders.filter(o => o.status === 'pending');
+  const nonPendingOrders = orders.filter(o => o.status !== 'pending');
+
+  const groups = {};
+  pendingOrders.forEach(o => {
+    const key = (o.customer_name || '').toLowerCase().trim() + '||' + (o.delivery_location || '').toLowerCase().trim();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+
+  let html = '';
+
+  // Render grouped pending orders as cart rows
+  Object.values(groups).forEach(groupOrders => {
+    const first = groupOrders[0];
+    const isMulti = groupOrders.length > 1;
+    const groupTotal = groupOrders.reduce((s, o) => s + parseFloat(o.total_price || 0), 0);
+    const groupKey = 'grp_' + first.id;
+
+    if (isMulti) {
+      // Multi-product group header row
+      html += `<tr style="background:rgba(124,58,237,0.06);border-left:3px solid var(--purple);">
+        <td colspan="9" style="padding:10px 14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:0.72rem;font-weight:700;background:var(--purple-dim);color:var(--purple-light);padding:3px 9px;border-radius:20px;border:1px solid rgba(124,58,237,0.3);">🛒 ${groupOrders.length} PRODUCTS</span>
+              <span class="td-name" style="font-size:0.88rem;">${first.customer_name}</span>
+              <span style="font-size:0.78rem;color:var(--text3);">— ${first.delivery_location}</span>
+              <span style="font-size:0.72rem;color:var(--text2);">Rep: <strong style="color:var(--purple-light);">${first.profiles?.ref_code || '—'}</strong></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:0.9rem;font-weight:800;color:var(--green);">₦${groupTotal.toLocaleString()} total</span>
+              <button class="btn btn-purple btn-sm" onclick="openGroupAssignModal('${groupKey}')">🚚 Assign All ${groupOrders.length}</button>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;" id="${groupKey}-items">
+            ${groupOrders.map((o, i) => `
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--card-border);">
+                <input type="checkbox" checked class="order-group-check" data-groupkey="${groupKey}" data-orderid="${o.id}"
+                  style="width:15px;height:15px;accent-color:var(--purple);cursor:pointer;flex-shrink:0;"
+                  onchange="updateGroupCart('${groupKey}')">
+                <span style="font-size:0.7rem;font-weight:700;color:var(--purple-light);background:var(--purple-dim);padding:1px 6px;border-radius:4px;">#${i+1}</span>
+                <span style="font-size:0.82rem;font-weight:600;flex:1;">${o.products?.name || '—'}</span>
+                <span style="font-size:0.72rem;color:var(--text3);">×${o.quantity}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;font-weight:700;color:var(--green);">₦${parseFloat(o.total_price||0).toLocaleString()}</span>
+                <button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>
+                <button class="btn btn-red btn-sm" onclick="cancelOrderWithReason('${o.id}')">✕</button>
+              </div>`).join('')}
+          </div>
+        </td>
+      </tr>`;
+    } else {
+      // Single pending order — flat row
+      const o = first;
+      html += `<tr>
+        <td class="td-name">${o.customer_name}</td>
+        <td style="font-size:0.8rem;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.products?.name||'—'}</td>
+        <td class="td-mono">${o.quantity}</td>
+        <td class="td-amount" style="color:var(--green);">₦${parseFloat(o.total_price||0).toLocaleString()}</td>
+        <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
+        <td style="font-size:0.8rem;color:var(--text2);">${o.delivery_location}</td>
+        <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
+        <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${o.created_at ? new Date(o.created_at).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit',hour12:true})+', '+new Date(o.created_at).toLocaleDateString('en-NG',{day:'numeric',month:'short'}) : '—'}</td>
+        <td>
+          <div class="row-actions">
+            <button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>
+            <button class="btn btn-red btn-sm" onclick="cancelOrderWithReason('${o.id}')">Cancel</button>
+          </div>
+        </td>
+      </tr>`;
+    }
+  });
+
+  // Render non-pending orders as flat rows below
+  nonPendingOrders.forEach(o => {
+    html += `<tr>
       <td class="td-name">${o.customer_name}</td>
       <td style="font-size:0.8rem;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.products?.name||'—'}</td>
       <td class="td-mono">${o.quantity}</td>
@@ -3234,12 +3312,9 @@ function renderOrders(orders) {
       <td><div style="font-size:0.8rem;font-weight:600;color:var(--text);">${o.profiles?.full_name||'—'}</div><div style="font-size:0.7rem;color:var(--purple-light);">${o.profiles?.ref_code||''}</div></td>
       <td style="font-size:0.8rem;color:var(--text2);">${o.delivery_location}</td>
       <td><span class="badge badge-${o.status}">${(o.status||'').replace(/_/g,' ')}</span></td>
-      <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${o.created_at ? new Date(o.created_at).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit',hour12:true}) + ', ' + new Date(o.created_at).toLocaleDateString('en-NG',{day:'numeric',month:'short'}) : '—'}</td>
+      <td style="font-size:0.75rem;color:var(--text3);white-space:nowrap;">${o.created_at ? new Date(o.created_at).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit',hour12:true})+', '+new Date(o.created_at).toLocaleDateString('en-NG',{day:'numeric',month:'short'}) : '—'}</td>
       <td>
         <div class="row-actions">
-          ${o.status === 'pending' ? `<button class="btn btn-purple btn-sm" onclick="openAssignModal('${o.id}','${o.customer_name}','${o.products?.name||''}','${o.delivery_location}','${o.total_price}')">Assign</button>` : ''}
-          ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditOrderModal('${o.id}','${o.customer_name}','${o.customer_phone||''}','${o.delivery_location}','${o.quantity}')">Edit</button>` : ''}
-          ${o.status === 'pending' ? `<button class="btn btn-red btn-sm" onclick="cancelOrderWithReason('${o.id}')">Cancel</button>` : ''}
           ${(o.status === 'assigned' || o.status === 'in_transit') ? `<button class="btn btn-green btn-sm" onclick="openWhatsAppFromOrder('${o.id}')">
             <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.523 5.848L.057 23.428c-.072.272.192.52.46.437l5.701-1.494A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.808 9.808 0 01-5.001-1.367l-.36-.214-3.713.973.992-3.61-.235-.372A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
           </button>` : ''}
@@ -3247,7 +3322,37 @@ function renderOrders(orders) {
           ${o.cancellation_reason ? `<span title="${o.cancellation_reason}" style="font-size:0.7rem;color:var(--red);cursor:help;">⚠ ${o.cancellation_reason.substring(0,20)}${o.cancellation_reason.length>20?'...':''}</span>` : ''}
         </div>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  });
+
+  tbody.innerHTML = html;
+}
+
+// Called when admin ticks/unticks an item in a multi-product group
+function updateGroupCart(groupKey) {
+  const checks = document.querySelectorAll(`.order-group-check[data-groupkey="${groupKey}"]`);
+  const checkedIds = Array.from(checks).filter(c => c.checked).map(c => c.dataset.orderid);
+  const checkedOrders = allOrders.filter(o => checkedIds.includes(o.id));
+  const newTotal = checkedOrders.reduce((s, o) => s + parseFloat(o.total_price || 0), 0);
+  // Update the "Assign All" button label + total shown
+  const row = document.getElementById(`${groupKey}-items`);
+  if (!row) return;
+  const parentTd = row.closest('tr').querySelector('td');
+  if (!parentTd) return;
+  const totalEl = parentTd.querySelector('span[style*="JetBrains Mono"]');
+  if (totalEl) totalEl.textContent = '₦' + newTotal.toLocaleString() + ' total';
+  const btn = parentTd.querySelector('button.btn-purple');
+  if (btn) btn.textContent = `🚚 Assign Selected (${checkedIds.length})`;
+}
+
+// Opens assign modal for a whole group — respects which checkboxes are ticked
+function openGroupAssignModal(groupKey) {
+  const checks = document.querySelectorAll(`.order-group-check[data-groupkey="${groupKey}"]`);
+  const checkedIds = Array.from(checks).filter(c => c.checked).map(c => c.dataset.orderid);
+  if (!checkedIds.length) { showToast('Select at least one order to assign', 'error'); return; }
+  const firstOrder = allOrders.find(o => o.id === checkedIds[0]);
+  if (!firstOrder) return;
+  openAssignModal(checkedIds[0], firstOrder.customer_name, firstOrder.products?.name || '—', firstOrder.delivery_location, firstOrder.total_price, checkedIds);
 }
 
 function filterOrders(val) {
@@ -3417,7 +3522,7 @@ function openAssignModalById(orderId) {
   openAssignModal(orderId, o.customer_name || '—', o.products?.name || '—', o.delivery_location || '—', o.total_price || 0);
 }
 
-function openAssignModal(orderId, customerName, productName, location, amount) {
+function openAssignModal(orderId, customerName, productName, location, amount, preselectedIds) {
   currentAssignOrderId = orderId;
   pendingWhatsAppUrl = null;
 
@@ -3431,10 +3536,16 @@ function openAssignModal(orderId, customerName, productName, location, amount) {
 
   // Full cart: clicked order + siblings
   const clickedOrder = allOrders.find(o => o.id === orderId);
-  const cartOrders = [
+  const allCartOrders = [
     { id: orderId, name: productName, qty: clickedOrder?.quantity || 1, price: parseFloat(amount || 0) },
     ...sibling.map(o => ({ id: o.id, name: o.products?.name || '—', qty: o.quantity || 1, price: parseFloat(o.total_price || 0) }))
   ];
+
+  // If admin passed preselectedIds (from checkbox ticking), filter to only those
+  const cartOrders = preselectedIds && preselectedIds.length
+    ? allCartOrders.filter(o => preselectedIds.includes(o.id))
+    : allCartOrders;
+
   currentBatchOrderIds = cartOrders.map(o => o.id);
   const grandTotal = cartOrders.reduce((s, o) => s + o.price, 0);
 
@@ -3509,17 +3620,13 @@ async function saveAssignment() {
   if (pendingWhatsAppUrl) waWindow = window.open('about:blank', '_blank');
 
   try {
-    // Generate one batch_id to group all orders in this cart together
-    const batchId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-
-    // Create one delivery record per order — all share the same batch_id
+    // Create one delivery record per order — grouped on logistics side by customer+location
     await Promise.all(batchIds.map(oid =>
       api('deliveries', 'POST', {
         order_id: oid,
         logistics_partner_id: logisticsId,
         notes,
-        status: 'assigned',
-        batch_id: batchId
+        status: 'assigned'
       }, { Prefer: 'return=minimal' })
     ));
 
@@ -3529,7 +3636,7 @@ async function saveAssignment() {
     ));
 
     closeModal('modal-assign');
-    showToast(batchIds.length > 1 ? `${batchIds.length} orders assigned as one batch!` : 'Order assigned!', 'success');
+    showToast(batchIds.length > 1 ? `${batchIds.length} orders assigned together!` : 'Order assigned!', 'success');
     loadOrders();
 
     if (waWindow && pendingWhatsAppUrl) {
