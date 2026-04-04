@@ -5048,22 +5048,27 @@ async function loadPerformance() {
       else s.pending++;
     });
 
-    const sorted = Object.values(repStats)
-      .filter(r => r.full_name)
+    const allRepList = Object.values(repStats).filter(r => r.full_name);
+    const maxOrd  = Math.max(...allRepList.map(r => r.total + r.cancelled), 1);
+    const maxAOV2 = Math.max(...allRepList.map(r => r.delivered_paid > 0 ? r.value / r.delivered_paid : 0), 1);
+
+    const sorted = allRepList
       .map(r => {
         const completed = r.delivered_paid + r.delivered_awaiting;
-        const completionRate = r.total > 0 ? Math.round((completed / r.total) * 100) : 0;
-        const cancellationRate = r.total > 0 ? Math.round((r.cancelled / r.total) * 100) : 0;
-        // Performance Score = val_delivered² × (delivered÷orders) × (1 - cancelled÷orders)
-        // — val_delivered² ensures high earners rank higher
-        // — delivered÷orders rewards order follow-through
-        // — (1 - cancelled÷orders) penalises cancellations
-        const completionFactor   = r.total > 0 ? completed / r.total : 0;
-        const cancellationFactor = r.total > 0 ? 1 - (r.cancelled / r.total) : 0;
-        const weightedScore = (r.value * r.value) * completionFactor * cancellationFactor;
-        return { ...r, completed, completionRate, cancellationRate, weightedScore, completionFactor, cancellationFactor };
+        const allO = r.total + r.cancelled;
+        const completionRate = allO > 0 ? Math.round((completed / allO) * 100) : 0;
+        const cancellationRate = allO > 0 ? Math.round((r.cancelled / allO) * 100) : 0;
+        // SPI = (0.37 × AdjCR) + (0.33 × RevReal × 100) + (0.25 × ADVI) − (0.05 × CancelRate × 100)
+        const cr       = allO > 0 ? completed / allO : 0;
+        const adjCR    = cr * (r.total / maxOrd) * 100;
+        const revReal  = r.value_ordered > 0 ? r.value / r.value_ordered : 0;
+        const aov      = r.delivered_paid > 0 ? r.value / r.delivered_paid : 0;
+        const advi     = (aov / maxAOV2) * 100;
+        const cancelRate = allO > 0 ? r.cancelled / allO : 0;
+        const spi      = parseFloat(((0.37 * adjCR) + (0.33 * revReal * 100) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1));
+        return { ...r, completed, completionRate, cancellationRate, adjCR: adjCR.toFixed(1), revReal: Math.round(revReal * 100), advi: advi.toFixed(1), spi };
       })
-      .sort((a, b) => b.weightedScore - a.weightedScore);
+      .sort((a, b) => b.spi - a.spi);
 
     // Summary strip
     const totalOrders = sorted.reduce((s,r) => s + r.total, 0);
@@ -5103,7 +5108,7 @@ async function loadPerformance() {
             <span style="font-size:0.65rem;font-weight:600;color:var(--red);">${r.cancellationRate}% cancelled</span>
           </div>
           <div style="margin-top:3px;font-size:0.6rem;color:var(--text3);">
-            SPI Score: <strong style="color:var(--purple-light);">${r.spi}pts</strong>
+            SPI: <strong style="color:var(--purple-light);">${r.spi}pts</strong>
             <span style="margin-left:6px;">AdjCR: ${r.adjCR} · RevReal: ${r.revReal}% · ADVI: ${r.advi}</span>
           </div>
         </div>
