@@ -6810,51 +6810,20 @@ async function fetchAllBusinessData(q) {
   };
 }
 
-// ── CALL AI VIA OPENROUTER (browser-direct, CORS supported) ──
-const OR_KEY = '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';
-const OR_MODELS = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'meta-llama/llama-3.1-8b-instruct:free',
-  'mistralai/mistral-7b-instruct:free',
-  'google/gemma-3-4b-it:free',
-];
-
+// ── CALL AI VIA EDGE FUNCTION (key lives server-side in Supabase secrets) ──
 async function callAI(systemPrompt, userMessage) {
-  let lastError = '';
-  for (const model of OR_MODELS) {
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OR_KEY}`,
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'LivingWell Admin'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user',   content: userMessage  }
-          ],
-          max_tokens: 1500,
-          temperature: 0.3
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        lastError = data?.error?.message || `${model} unavailable (${res.status})`;
-        continue;
-      }
-      const reply = data.choices?.[0]?.message?.content;
-      if (!reply) { lastError = 'Empty response from ' + model; continue; }
-      return reply;
-    } catch(e) {
-      lastError = e.message;
-      continue;
-    }
-  }
-  throw new Error('All models unavailable. Last error: ' + lastError);
+  const res = await fetch(CHAT_FN, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${localStorage.getItem('lw_token') || SUPABASE_KEY}`
+    },
+    body: JSON.stringify({ systemPrompt, userMessage })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Edge function error');
+  return data.reply || 'No response.';
 }
 
 // ── MAIN SEND ──
