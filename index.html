@@ -6576,254 +6576,307 @@ async function fetchAllBusinessData(q) {
   const specificDate = extractDate(q);
   const specificWeek = extractWeekRange(q);
 
-  // ── Detect what the question is about ──
   const needsOrders     = /order|customer|sale|pending|assign|cancel|today|week|month|date|how many|count/i.test(q);
   const needsRevenue    = /revenue|money|payment|paid|income|naira|₦|earn|collect|total/i.test(q);
   const needsDeliveries = /deliver|remit|unremit|dispatch|collected|partner.*pay|pay.*partner/i.test(q);
   const needsStock      = /stock|warehouse|inventory|quantity|item|left|remaining/i.test(q);
-  const needsReps       = /rep|agent|staff|perform|leaderboard|top|rank|who.*best|best.*who|all.*sales|sales.*all|spool|every.*rep|list.*rep|rep.*list/i.test(q);
-  const needsLogistics  = /logistics|partner|nancy|dispatch|sent.*to|stock.*partner/i.test(q);
-
-  // If nothing specific matched — fetch everything (general/summary question)
+  const needsReps       = /rep|agent|staff|perform|leaderboard|top|rank|who.*best|best.*who|all.*sales|sales.*all|spool|every.*rep|list.*rep|rep.*list|no sale|zero sale|worst|best sale/i.test(q);
+  const needsLogistics  = /logistics|partner|deliver|remit|dispatch|sent.*to|stock.*partner/i.test(q);
   const fetchAll = ![needsOrders,needsRevenue,needsDeliveries,needsStock,needsReps,needsLogistics].some(Boolean);
 
-  // ── Fetch only what's needed in parallel ──
-  const [
-    ordersAll, paymentsAll, repsAll,
-    deliveriesAll, stockAll, logisticsAll
-  ] = await Promise.all([
-    (fetchAll || needsOrders || needsRevenue || needsReps)
-      ? api(`orders?select=id,status,total_price,customer_name,created_at,rep_id,profiles(full_name,ref_code),products(name)&order=created_at.desc`).catch(()=>[])
+  const [ordersAll, paymentsAll, repsAll, deliveriesAll, stockAll, logisticsAll] = await Promise.all([
+    (fetchAll||needsOrders||needsRevenue||needsReps)
+      ? api(`orders?select=id,status,total_price,customer_name,created_at,rep_id,quantity,profiles(full_name,ref_code),products(name)&order=created_at.desc`).catch(()=>[])
       : Promise.resolve([]),
-    (fetchAll || needsRevenue)
+    (fetchAll||needsRevenue)
       ? api(`payments?select=amount_received,payment_method,confirmed_at,order_id&order=confirmed_at.desc`).catch(()=>[])
       : Promise.resolve([]),
-    (fetchAll || needsReps)
+    (fetchAll||needsReps)
       ? api(`profiles?role=eq.rep&select=id,full_name,ref_code,is_active&order=full_name`).catch(()=>[])
       : Promise.resolve([]),
-    (fetchAll || needsDeliveries)
-      ? api(`deliveries?select=id,status,assigned_at,customer_paid,remitted_to_admin,logistics_partner_id,logistics_partners(name),orders(id,customer_name,total_price,profiles(full_name))&order=assigned_at.desc`).catch(()=>[])
+    (fetchAll||needsDeliveries||needsLogistics||needsReps)
+      ? api(`deliveries?select=id,status,assigned_at,customer_paid,remitted_to_admin,amount_collected,logistics_partner_id,logistics_partners(name),orders(id,customer_name,total_price,rep_id,profiles(full_name),products(name))&order=assigned_at.desc`).catch(()=>[])
       : Promise.resolve([]),
-    (fetchAll || needsStock)
+    (fetchAll||needsStock)
       ? api(`stock?select=quantity,products(name,price,is_active)&order=products(name)`).catch(()=>[])
       : Promise.resolve([]),
-    (fetchAll || needsLogistics || needsStock)
+    (fetchAll||needsLogistics||needsStock)
       ? api(`logistics_stock?select=quantity_sent,quantity_confirmed,quantity_remaining,confirmed,sent_at,logistics_partner_id,logistics_partners(name),products(name,price)&order=sent_at.desc`).catch(()=>[])
       : Promise.resolve([]),
   ]);
 
-  // ── Helpers ──
-  const sumAmt = (arr,key='amount_received') => arr.reduce((s,x)=>s+parseFloat(x[key]||0),0);
   const fmtDate = d => d ? d.split('T')[0] : null;
+  const sumAmt  = (arr,key='amount_received') => arr.reduce((s,x)=>s+parseFloat(x[key]||0),0);
+  const sumOrders = arr => arr.reduce((s,o)=>s+parseFloat(o.total_price||0),0);
 
-  // ── Orders breakdown ──
+  // ── Orders ──
   const activeOrders = ordersAll.filter(o=>o.status!=='cancelled');
-  const oToday  = activeOrders.filter(o=>fmtDate(o.created_at)===today);
-  const oWeek   = activeOrders.filter(o=>fmtDate(o.created_at)>=ws);
-  const oMonth  = activeOrders.filter(o=>fmtDate(o.created_at)>=ms);
-  const oSpecific = specificDate ? activeOrders.filter(o=>fmtDate(o.created_at)===specificDate) : [];
-  const oSpecWeek = specificWeek ? activeOrders.filter(o=>fmtDate(o.created_at)>=specificWeek.from&&fmtDate(o.created_at)<=specificWeek.to) : [];
+  const oToday   = activeOrders.filter(o=>fmtDate(o.created_at)===today);
+  const oWeek    = activeOrders.filter(o=>fmtDate(o.created_at)>=ws);
+  const oMonth   = activeOrders.filter(o=>fmtDate(o.created_at)>=ms);
+  const oSpecific  = specificDate ? activeOrders.filter(o=>fmtDate(o.created_at)===specificDate) : [];
+  const oSpecWeek  = specificWeek ? activeOrders.filter(o=>fmtDate(o.created_at)>=specificWeek.from&&fmtDate(o.created_at)<=specificWeek.to) : [];
 
   const statusCount = arr => ({
     pending:            arr.filter(o=>o.status==='pending').length,
     assigned:           arr.filter(o=>o.status==='assigned').length,
     delivered_paid:     arr.filter(o=>o.status==='delivered_payment_made').length,
     delivered_awaiting: arr.filter(o=>o.status==='delivered_awaiting_payment').length,
-    cancelled:          ordersAll.filter(o=>o.status==='cancelled').length
+    cancelled:          ordersAll.filter(o=>o.status==='cancelled'&&arr.some(x=>x.rep_id===o.rep_id)).length
   });
 
   const orderList = arr => arr.map(o=>({
-    customer: o.customer_name,
-    product:  o.products?.name||'—',
-    amount:   parseFloat(o.total_price||0),
-    status:   o.status,
-    rep:      o.profiles?.full_name||'—',
-    date:     fmtDate(o.created_at)
+    customer:o.customer_name, product:o.products?.name||'—',
+    amount:parseFloat(o.total_price||0), status:o.status,
+    rep:o.profiles?.full_name||'—', date:fmtDate(o.created_at)
   }));
 
-  // ── Revenue — computed from orders with delivered_payment_made status (same as dashboard) ──
-  // paymentsAll kept for method breakdown only (if populated); total revenue uses order total_price
-  const paidOrders    = ordersAll.filter(o=>o.status==='delivered_payment_made');
-  const awaitingOrders= ordersAll.filter(o=>o.status==='delivered_awaiting_payment');
+  // ── Revenue ──
+  const paidOrders     = ordersAll.filter(o=>o.status==='delivered_payment_made');
+  const awaitingOrders = ordersAll.filter(o=>o.status==='delivered_awaiting_payment');
+  const revToday    = paidOrders.filter(o=>fmtDate(o.created_at)===today);
+  const revWeek     = paidOrders.filter(o=>fmtDate(o.created_at)>=ws);
+  const revMonth    = paidOrders.filter(o=>fmtDate(o.created_at)>=ms);
+  const revSpecific = specificDate ? paidOrders.filter(o=>fmtDate(o.created_at)===specificDate) : [];
+  const revSpecWeek = specificWeek ? paidOrders.filter(o=>fmtDate(o.created_at)>=specificWeek.from&&fmtDate(o.created_at)<=specificWeek.to) : [];
 
-  const revToday   = paidOrders.filter(o=>fmtDate(o.created_at)===today);
-  const revWeek    = paidOrders.filter(o=>fmtDate(o.created_at)>=ws);
-  const revMonth   = paidOrders.filter(o=>fmtDate(o.created_at)>=ms);
-  const revSpecific= specificDate ? paidOrders.filter(o=>fmtDate(o.created_at)===specificDate) : [];
-  const revSpecWeek= specificWeek ? paidOrders.filter(o=>fmtDate(o.created_at)>=specificWeek.from&&fmtDate(o.created_at)<=specificWeek.to) : [];
-
-  const sumOrders = arr => arr.reduce((s,o)=>s+parseFloat(o.total_price||0),0);
-
-  // Payment method breakdown from payments table (bonus detail if available)
   const methodBreakdown = arr => {
     const m={};
     arr.forEach(p=>{const k=p.payment_method||'cash';m[k]=(m[k]||0)+parseFloat(p.amount_received||0);});
     return Object.keys(m).length ? m : null;
   };
 
-  // ── Rep performance — ALL reps including zero-activity ones ──
-  const activeReps = repsAll.filter(r=>r.is_active);
-  const repMap={};
-  // Include ALL reps so chatbot can report "no sales" for inactive/zero-activity reps
-  repsAll.forEach(r=>{
-    repMap[r.id]={
-      name:r.full_name, ref:r.ref_code, is_active:r.is_active,
-      total_orders:0, pending:0, assigned:0, cancelled:0,
-      delivered_paid:0, delivered_awaiting:0, revenue:0, val_ordered:0
-    };
-  });
-  ordersAll.forEach(o=>{
-    if(!repMap[o.rep_id]) return;
-    const price = parseFloat(o.total_price||0);
-    repMap[o.rep_id].val_ordered += price;
-    if(o.status==='cancelled'){ repMap[o.rep_id].cancelled++; return; }
-    repMap[o.rep_id].total_orders++;
-    if(o.status==='pending')                      repMap[o.rep_id].pending++;
-    if(o.status==='assigned')                     repMap[o.rep_id].assigned++;
-    if(o.status==='delivered_payment_made'){       repMap[o.rep_id].delivered_paid++; repMap[o.rep_id].revenue+=price;}
-    if(o.status==='delivered_awaiting_payment')   repMap[o.rep_id].delivered_awaiting++;
-  });
+  // ── Build rep stats for ANY order slice ──
+  function buildRepStats(orderSlice, allRepsRef, allOrdersRef) {
+    const map = {};
+    allRepsRef.forEach(r => {
+      map[r.id] = {
+        name:r.full_name, ref:r.ref_code, is_active:r.is_active,
+        orders:0, pending:0, assigned:0, delivered_paid:0,
+        delivered_awaiting:0, cancelled:0, revenue:0, val_ordered:0,
+        products_sold:{}
+      };
+    });
+    // count cancellations from full orders set scoped by date if slice provided
+    allOrdersRef.filter(o=>o.status==='cancelled'&&
+      (orderSlice===allOrdersRef || orderSlice.some(x=>fmtDate(x.created_at)===fmtDate(o.created_at))))
+      .forEach(o=>{ if(map[o.rep_id]) map[o.rep_id].cancelled++; });
 
-  // ── SPI Formula (Sales Performance Index) ──
-  // SPI = (0.37 × AdjCR) + (0.33 × RevReal × 100) + (0.25 × ADVI) − (0.05 × CancelRate × 100)
-  // AdjCR = completionRate × (orders / maxOrders)
-  // RevReal = val_delivered / val_ordered
-  // ADVI = (AOV / maxAOV) × 100
-  const maxOrders = Math.max(...Object.values(repMap).map(r=>r.total_orders), 1);
-  const maxAOV    = Math.max(...Object.values(repMap).map(r=> r.delivered_paid > 0 ? r.revenue/r.delivered_paid : 0), 1);
+    orderSlice.forEach(o=>{
+      if(!map[o.rep_id]) return;
+      const price = parseFloat(o.total_price||0);
+      map[o.rep_id].val_ordered += price;
+      if(o.status==='cancelled') return;
+      map[o.rep_id].orders++;
+      if(o.status==='pending')                     map[o.rep_id].pending++;
+      if(o.status==='assigned')                    map[o.rep_id].assigned++;
+      if(o.status==='delivered_payment_made'){      map[o.rep_id].delivered_paid++; map[o.rep_id].revenue+=price; }
+      if(o.status==='delivered_awaiting_payment')  map[o.rep_id].delivered_awaiting++;
+      const pname = o.products?.name||'Unknown';
+      map[o.rep_id].products_sold[pname] = (map[o.rep_id].products_sold[pname]||0)+1;
+    });
 
-  const repRanked = Object.values(repMap)
-    .map(r => {
-      const allO  = r.total_orders + r.cancelled;
-      const delivered = r.delivered_paid + r.delivered_awaiting;
-      const cr    = allO > 0 ? delivered / allO : 0;
-      const adjCR = cr * (r.total_orders / maxOrders) * 100;
-      const revReal = r.val_ordered > 0 ? r.revenue / r.val_ordered : 0;
-      const cancelRate = allO > 0 ? r.cancelled / allO : 0;
-      const maxOrdAI   = Math.max(...Object.values(repMap).map(x => x.total_orders + (x.cancelled||0)), 1);
-      const volFactor  = allO / maxOrdAI;
-      const adjRevReal = revReal * volFactor * 100;
-      const poolRev    = Object.values(repMap).reduce((s,x) => s + x.revenue, 0) || 1;
-      const advi       = (r.revenue / poolRev) * 100;
-      const spi        = parseFloat(((0.37 * adjCR) + (0.33 * adjRevReal) + (0.25 * advi) - (0.05 * cancelRate * 100)).toFixed(1));
-      return { ...r, delivered, allOrders:allO, completionRate:Math.round(cr*100), cancelRate:Math.round(cancelRate*100), advi:advi.toFixed(1), spi };
-    })
-    .sort((a,b) => b.spi - a.spi);
+    const maxOrders = Math.max(...Object.values(map).map(r=>r.orders), 1);
+    const poolRev   = Object.values(map).reduce((s,r)=>s+r.revenue,0)||1;
 
-  // ── Logistics stock by partner ──
+    return Object.values(map).map(r=>{
+      const allO = r.orders + r.cancelled;
+      const cr   = allO>0 ? r.delivered_paid/allO : 0;
+      const adjCR = cr*(r.orders/maxOrders)*100;
+      const revReal = r.val_ordered>0 ? r.revenue/r.val_ordered : 0;
+      const volFactor = allO / Math.max(...Object.values(map).map(x=>x.orders+(x.cancelled||0)),1);
+      const adjRevReal = revReal*volFactor*100;
+      const advi = (r.revenue/poolRev)*100;
+      const cancelRate = allO>0 ? r.cancelled/allO : 0;
+      const spi = parseFloat(((0.37*adjCR)+(0.33*adjRevReal)+(0.25*advi)-(0.05*cancelRate*100)).toFixed(1));
+      const products_sold = Object.keys(r.products_sold).length ? r.products_sold : null;
+      return {
+        name:r.name, ref:r.ref, is_active:r.is_active,
+        orders:r.orders, delivered_paid:r.delivered_paid,
+        delivered_awaiting:r.delivered_awaiting, pending:r.pending,
+        assigned:r.assigned, cancelled:r.cancelled,
+        revenue:r.revenue, val_ordered:r.val_ordered,
+        completion_rate:Math.round(cr*100),
+        cancel_rate:Math.round(cancelRate*100),
+        spi, products_sold
+      };
+    }).sort((a,b)=>b.spi-a.spi);
+  }
+
+  // Build all-time rep stats
+  const repRanked = buildRepStats(activeOrders, repsAll, ordersAll);
+
+  // Build date-specific rep stats if a date/week was asked about
+  const repsByDate  = specificDate ? buildRepStats(oSpecific,  repsAll, ordersAll) : null;
+  const repsByWeek  = specificWeek ? buildRepStats(oSpecWeek,  repsAll, ordersAll) : null;
+  const repsByToday = buildRepStats(oToday, repsAll, ordersAll);
+  const repsByThisWeek = buildRepStats(oWeek, repsAll, ordersAll);
+
+  // ── Logistics ──
   const logByPartner={};
   logisticsAll.forEach(s=>{
     const pname=s.logistics_partners?.name||'Unknown';
-    if(!logByPartner[pname]) logByPartner[pname]={items:[],total_sent:0,total_remaining:0};
+    if(!logByPartner[pname]) logByPartner[pname]={items:[],total_sent:0,total_remaining:0,total_value:0};
     logByPartner[pname].items.push({
-      product: s.products?.name,
-      price:   parseFloat(s.products?.price||0),
-      sent:    s.quantity_sent,
-      confirmed_qty: s.quantity_confirmed,
-      remaining: s.quantity_remaining,
-      is_confirmed: s.confirmed,
-      date: fmtDate(s.sent_at)
+      product:s.products?.name, price:parseFloat(s.products?.price||0),
+      sent:s.quantity_sent, confirmed_qty:s.quantity_confirmed,
+      remaining:s.quantity_remaining, is_confirmed:s.confirmed,
+      date:fmtDate(s.sent_at)
     });
     logByPartner[pname].total_sent      += s.quantity_sent||0;
     logByPartner[pname].total_remaining += s.quantity_remaining||0;
+    logByPartner[pname].total_value     += (s.quantity_remaining||0)*parseFloat(s.products?.price||0);
   });
 
-  // ── Deliveries ──
+  // Delivery performance per logistics partner
+  const logDeliveryPerf={};
+  deliveriesAll.forEach(d=>{
+    const pname=d.logistics_partners?.name||'Unknown';
+    if(!logDeliveryPerf[pname]) logDeliveryPerf[pname]={
+      total:0, delivered:0, pending:0, cancelled:0,
+      paid:0, awaiting:0, remitted:0, unremitted:0,
+      revenue_delivered:0, revenue_unremitted:0
+    };
+    const p=logDeliveryPerf[pname];
+    p.total++;
+    if(d.status==='assigned')                      p.pending++;
+    if(d.status==='delivered_payment_made')        { p.delivered++; p.paid++; }
+    if(d.status==='delivered_awaiting_payment')    { p.delivered++; p.awaiting++; }
+    if(d.status==='cancelled')                     p.cancelled++;
+    if(d.customer_paid&&d.remitted_to_admin)         { p.remitted++; p.revenue_delivered+=parseFloat(d.amount_collected||d.orders?.total_price||0); }
+    if(d.customer_paid&&!d.remitted_to_admin)        { p.unremitted++; p.revenue_unremitted+=parseFloat(d.amount_collected||d.orders?.total_price||0); }
+  });
+
+  // Deliveries
   const dPending    = deliveriesAll.filter(d=>d.status==='assigned');
-  const dDelivered  = deliveriesAll.filter(d=>d.status==='delivered');
   const dUnremitted = deliveriesAll.filter(d=>d.customer_paid===true&&d.remitted_to_admin===false);
   const dRemitted   = deliveriesAll.filter(d=>d.customer_paid===true&&d.remitted_to_admin===true);
 
   const delivList = arr => arr.map(d=>({
-    customer: d.orders?.customer_name||'—',
-    amount:   parseFloat(d.orders?.total_price||0),
-    partner:  d.logistics_partners?.name||'—',
-    rep:      d.orders?.profiles?.full_name||'—',
-    date:     fmtDate(d.assigned_at),
-    status:   d.status,
-    customer_paid:   d.customer_paid,
-    remitted_to_admin: d.remitted_to_admin
+    customer:d.orders?.customer_name||'—', product:d.orders?.products?.name||'—',
+    amount:parseFloat(d.orders?.total_price||0), partner:d.logistics_partners?.name||'—',
+    rep:d.orders?.profiles?.full_name||'—', date:fmtDate(d.assigned_at),
+    status:d.status, customer_paid:d.customer_paid, remitted:d.remitted_to_admin
   }));
 
-  // ── Warehouse stock ──
+  // Warehouse stock
   const stockItems = stockAll
     .map(s=>({product:s.products?.name, qty:s.quantity, price:parseFloat(s.products?.price||0), active:s.products?.is_active}))
-    .filter(s=>s.product)
-    .sort((a,b)=>b.qty-a.qty);
+    .filter(s=>s.product).sort((a,b)=>b.qty-a.qty);
 
-  // ── Build final compact context ──
   return {
     today, week_start:ws, month_start:ms,
-    specific_date:  specificDate,
-    specific_week:  specificWeek,
+    specific_date:specificDate, specific_week:specificWeek,
 
-    orders: {
-      today:       { count:oToday.length,  list:orderList(oToday),  status:statusCount(oToday)  },
-      this_week:   { count:oWeek.length,   list:orderList(oWeek),   status:statusCount(oWeek)   },
-      this_month:  { count:oMonth.length,  status:statusCount(oMonth), total_value:sumAmt(oMonth,'total_price') },
-      all_time:    { count:activeOrders.length, status:statusCount(activeOrders), total_value:sumAmt(activeOrders,'total_price') },
-      specific_date: specificDate ? { date:specificDate, count:oSpecific.length, list:orderList(oSpecific), status:statusCount(oSpecific) } : null,
-      specific_week: specificWeek ? { ...specificWeek, count:oSpecWeek.length, list:orderList(oSpecWeek), status:statusCount(oSpecWeek) } : null,
+    orders:{
+      today:        {count:oToday.length,   list:orderList(oToday),   status:statusCount(oToday)},
+      this_week:    {count:oWeek.length,    list:orderList(oWeek),    status:statusCount(oWeek)},
+      this_month:   {count:oMonth.length,   status:statusCount(oMonth), total_value:sumOrders(oMonth)},
+      all_time:     {count:activeOrders.length, status:statusCount(activeOrders), total_value:sumOrders(activeOrders)},
+      specific_date: specificDate ? {date:specificDate, count:oSpecific.length, list:orderList(oSpecific), status:statusCount(oSpecific)} : null,
+      specific_week: specificWeek ? {...specificWeek, count:oSpecWeek.length, list:orderList(oSpecWeek), status:statusCount(oSpecWeek)} : null,
     },
 
-    revenue: {
-      today:      { total:sumOrders(revToday),    orders:revToday.length,    awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)===today)) },
-      this_week:  { total:sumOrders(revWeek),     orders:revWeek.length,     awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ws)) },
-      this_month: { total:sumOrders(revMonth),    orders:revMonth.length,    awaiting_payment:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ms)) },
-      all_time:   { total:sumOrders(paidOrders),  orders:paidOrders.length,  awaiting_payment:sumOrders(awaitingOrders), by_method:methodBreakdown(paymentsAll) },
-      specific_date: specificDate ? { date:specificDate, total:sumOrders(revSpecific), orders:revSpecific.length } : null,
-      specific_week: specificWeek ? { ...specificWeek,   total:sumOrders(revSpecWeek), orders:revSpecWeek.length } : null,
+    revenue:{
+      today:      {total:sumOrders(revToday),   orders:revToday.length,   awaiting:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)===today))},
+      this_week:  {total:sumOrders(revWeek),    orders:revWeek.length,    awaiting:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ws))},
+      this_month: {total:sumOrders(revMonth),   orders:revMonth.length,   awaiting:sumOrders(awaitingOrders.filter(o=>fmtDate(o.created_at)>=ms))},
+      all_time:   {total:sumOrders(paidOrders), orders:paidOrders.length, awaiting:sumOrders(awaitingOrders), by_method:methodBreakdown(paymentsAll)},
+      specific_date: specificDate ? {date:specificDate, total:sumOrders(revSpecific), orders:revSpecific.length} : null,
+      specific_week: specificWeek ? {...specificWeek, total:sumOrders(revSpecWeek), orders:revSpecWeek.length} : null,
     },
 
-    reps: {
-      total:    repsAll.length,
-      active:   activeReps.length,
-      inactive: repsAll.filter(r=>!r.is_active).length,
-      all_reps: repRanked, // sorted by SPI score — includes ALL reps even zero-activity
-      top_rep:  repRanked.filter(r=>r.spi>0)[0]||null,
-      zero_activity: repRanked.filter(r=>r.total_orders===0&&r.cancelled===0).map(r=>r.name),
+    reps:{
+      total:repsAll.length, active:repsAll.filter(r=>r.is_active).length,
+      inactive:repsAll.filter(r=>!r.is_active).length,
+      // All-time rankings with SPI
+      all_time: repRanked,
+      top_rep:  repRanked.find(r=>r.spi>0)||null,
+      no_sales_ever: repRanked.filter(r=>r.orders===0&&r.cancelled===0).map(r=>r.name),
+      // Today breakdown — who sold what today, who had zero
+      today: {
+        with_sales:    repsByToday.filter(r=>r.orders>0).map(r=>({name:r.name,orders:r.orders,revenue:r.revenue,products:r.products_sold})),
+        zero_sales:    repsByToday.filter(r=>r.orders===0&&r.cancelled===0).map(r=>r.name),
+        best:          repsByToday.find(r=>r.orders>0)||null,
+        total_orders:  oToday.length,
+      },
+      // This week breakdown
+      this_week: {
+        with_sales:    repsByThisWeek.filter(r=>r.orders>0).map(r=>({name:r.name,orders:r.orders,revenue:r.revenue,spi:r.spi,products:r.products_sold})),
+        zero_sales:    repsByThisWeek.filter(r=>r.orders===0&&r.cancelled===0).map(r=>r.name),
+        best:          repsByThisWeek.find(r=>r.orders>0)||null,
+        worst_active:  repsByThisWeek.filter(r=>r.is_active&&r.orders>0).slice(-1)[0]||null,
+      },
+      // Specific date breakdown (only when date asked)
+      specific_date: repsByDate ? {
+        date: specificDate,
+        with_sales:  repsByDate.filter(r=>r.orders>0).map(r=>({name:r.name,ref:r.ref,orders:r.orders,revenue:r.revenue,delivered:r.delivered_paid,pending:r.pending,cancelled:r.cancelled,products:r.products_sold})),
+        zero_sales:  repsByDate.filter(r=>r.orders===0&&r.cancelled===0).map(r=>r.name),
+        cancelled_only: repsByDate.filter(r=>r.orders===0&&r.cancelled>0).map(r=>({name:r.name,cancelled:r.cancelled})),
+        best:        repsByDate.find(r=>r.orders>0)||null,
+        worst:       repsByDate.filter(r=>r.orders>0).slice(-1)[0]||null,
+        total_orders: oSpecific.length,
+        total_revenue: sumOrders(revSpecific),
+      } : null,
+      // Specific week breakdown
+      specific_week: repsByWeek ? {
+        ...specificWeek,
+        with_sales:  repsByWeek.filter(r=>r.orders>0).map(r=>({name:r.name,ref:r.ref,orders:r.orders,revenue:r.revenue,delivered:r.delivered_paid,spi:r.spi,products:r.products_sold})),
+        zero_sales:  repsByWeek.filter(r=>r.orders===0&&r.cancelled===0).map(r=>r.name),
+        best:        repsByWeek.find(r=>r.orders>0)||null,
+        total_orders: oSpecWeek.length,
+        total_revenue: sumOrders(revSpecWeek),
+      } : null,
     },
 
-    stock: {
-      warehouse: stockItems,
+    stock:{
+      warehouse:    stockItems,
       out_of_stock: stockItems.filter(i=>i.qty<=0),
       low_stock:    stockItems.filter(i=>i.qty>0&&i.qty<=5),
+      total_products: stockItems.length,
+      total_units:  stockItems.reduce((s,i)=>s+i.qty,0),
+      total_value:  stockItems.reduce((s,i)=>s+(i.qty*i.price),0),
     },
 
-    logistics: {
+    logistics:{
       all_partner_names: Object.keys(logByPartner),
       by_partner: logByPartner,
+      delivery_performance: logDeliveryPerf,
     },
 
-    deliveries: {
-      total:           deliveriesAll.length,
-      pending_count:   dPending.length,
-      delivered_count: dDelivered.length,
+    deliveries:{
+      total:            deliveriesAll.length,
+      pending_count:    dPending.length,
       unremitted_count: dUnremitted.length,
       remitted_count:   dRemitted.length,
-      unremitted_value: dUnremitted.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0),
-      remitted_value:   dRemitted.reduce((s,d)=>s+parseFloat(d.orders?.total_price||0),0),
-      pending_list:    delivList(dPending),
-      unremitted_list: delivList(dUnremitted),
-      remitted_list:   delivList(dRemitted),
+      unremitted_value: dUnremitted.reduce((s,d)=>s+parseFloat(d.amount_collected||d.orders?.total_price||0),0),
+      remitted_value:   dRemitted.reduce((s,d)=>s+parseFloat(d.amount_collected||d.orders?.total_price||0),0),
+      pending_list:     delivList(dPending).slice(0,10),
+      unremitted_list:  delivList(dUnremitted).slice(0,10),
+      remitted_list:    delivList(dRemitted).slice(0,10),
     },
   };
 }
 
-// ── CALL AI VIA EDGE FUNCTION (key lives server-side in Supabase secrets) ──
+// ── CALL AI VIA EDGE FUNCTION (Groq first, Qwen fallback handled server-side) ──
+function estimateTokens(str) { return Math.ceil(str.length / 4); }
+const GROQ_TOKEN_LIMIT = 5800;
+
 async function callAI(systemPrompt, userMessage) {
+  const preferQwen = estimateTokens(systemPrompt + userMessage) > GROQ_TOKEN_LIMIT;
+  if (preferQwen) updateTypingLabel(true);
   const res = await fetch(CHAT_FN, {
-    method: 'POST',
+    method : 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${localStorage.getItem('lw_token') || SUPABASE_KEY}`
+      'Content-Type' : 'application/json',
+      'apikey'       : SUPABASE_KEY,
+      'Authorization': `Bearer ${localStorage.getItem('lw_token')||SUPABASE_KEY}`
     },
-    body: JSON.stringify({ systemPrompt, userMessage })
+    body: JSON.stringify({ systemPrompt, userMessage, preferQwen })
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'Edge function error');
-  return data.reply || 'No response.';
+  if(!res.ok) throw new Error(data?.error||'Edge function error');
+  return data.reply||'No response.';
 }
 
 // ── MAIN SEND ──
@@ -6844,22 +6897,49 @@ async function sendChatMessage() {
     const systemPrompt =
 `You are an intelligent business assistant for LivingWell, a Nigerian health/wellness company. Today is ${now}. Currency is Nigerian Naira (₦).
 
-You have access to the relevant live business data below (fetched based on the question). Answer accurately using only what's provided. If data for a specific area is missing, say it wasn't needed for this query and suggest they ask specifically.
+You have live business data below. Answer accurately using only what is provided. Be conversational, precise and give full breakdowns.
 
 KEY RULES:
 - Bold all key numbers and names using **bold**
 - Format all money as ₦1,250,000
 - Never guess — only use numbers from the data
-- If a specific date or week was asked about, use specific_date or specific_week fields
-- For rep questions: use reps.all_reps — ranked by SPI (Sales Performance Index). SPI = (0.37×AdjCR) + (0.33×RevReal×100) + (0.25×ADVI) − (0.05×CancelRate×100). AdjCR = completionRate × (orders/maxOrders). RevReal = val_delivered/val_ordered. ADVI = (rep val_delivered / total pool val_delivered) × 100 — rewards reps who contribute a bigger share of total business revenue.. Each rep has: spi, completionRate, revReal, advi, cancelRate, total_orders, delivered, cancelled, revenue, val_ordered. Reps with zero activity are in reps.zero_activity array. If asked about a specific date, filter orders by date but still show ALL reps — those with no orders on that date had zero sales that day.
-- For logistics partner stock: use logistics.by_partner — each key is a partner name
-- REVENUE SOURCE: revenue figures come from orders with status "delivered_payment_made" using total_price — NOT the payments table. revenue.today.total = sum of today's paid orders. revenue.all_time.awaiting_payment = money not yet collected.
-- For unremitted: use deliveries.unremitted_list and unremitted_value
-- For remitted: use deliveries.remitted_list and remitted_value  
-- For stock: use stock.warehouse — qty is current quantity
-- Be conversational but precise. Give full breakdowns when data is available.
-- If a person's name is mentioned, search reps.all_reps for matching name and give their specific stats
-- If a partner name is mentioned, search logistics.by_partner for matching name and show their stock
+
+REP PERFORMANCE RULES:
+- All-time rankings: use reps.all_time — sorted by SPI (Sales Performance Index)
+- SPI = (0.37×AdjCR) + (0.33×RevReal×100) + (0.25×ADVI) − (0.05×CancelRate×100). Higher = better.
+- Each rep has: name, orders, delivered_paid, delivered_awaiting, pending, cancelled, revenue, val_ordered, completion_rate, cancel_rate, spi, products_sold
+- Reps with zero orders ever: reps.no_sales_ever
+- TODAY breakdown: reps.today.with_sales (who sold today), reps.today.zero_sales (who had no sales today), reps.today.best (top rep today)
+- THIS WEEK breakdown: reps.this_week.with_sales, reps.this_week.zero_sales, reps.this_week.best, reps.this_week.worst_active
+- SPECIFIC DATE (when user asks about a date): reps.specific_date.with_sales, reps.specific_date.zero_sales, reps.specific_date.cancelled_only, reps.specific_date.best, reps.specific_date.worst, reps.specific_date.total_orders, reps.specific_date.total_revenue
+- SPECIFIC WEEK: reps.specific_week.with_sales, reps.specific_week.zero_sales, reps.specific_week.best
+- products_sold shows what product each rep sold and how many units e.g {"Aloe Vera Plus":3,"Ami-Tone":1}
+- When asked "who had no sales on [date]" → use reps.specific_date.zero_sales list
+- When asked "best rep on [date]" → use reps.specific_date.best
+- When asked "spool all reps" or "show all reps" → list ALL reps from reps.all_time including zero-activity ones
+- For individual rep lookup: search reps.all_time by name and show all their stats
+
+LOGISTICS RULES:
+- Stock per partner: logistics.by_partner[partnerName].items — shows each product, qty sent, qty remaining
+- Delivery performance per partner: logistics.delivery_performance[partnerName] — shows total deliveries, delivered, pending, cancelled, paid, remitted, unremitted, revenue
+- When asked about a partner: combine their stock (by_partner) AND delivery performance (delivery_performance)
+- Unremitted cash (cash collected but not handed to admin): deliveries.unremitted_list, deliveries.unremitted_value
+- Remitted cash: deliveries.remitted_list, deliveries.remitted_value
+- Pending deliveries: deliveries.pending_list
+
+STOCK RULES:
+- Current warehouse stock: stock.warehouse — each item has product, qty, price, active
+- Out of stock: stock.out_of_stock
+- Low stock (5 or fewer): stock.low_stock
+- Total warehouse value: stock.total_value
+- Always list ALL products when asked about stock, not just low/out ones
+
+REVENUE RULES:
+- Revenue = orders with status "delivered_payment_made" using total_price
+- Today revenue: revenue.today.total
+- Awaiting payment (delivered but not paid): revenue.today.awaiting / this_week / this_month
+- All time: revenue.all_time.total, revenue.all_time.awaiting, revenue.all_time.by_method
+- Specific date/week: revenue.specific_date, revenue.specific_week
 
 LIVE DATA:
 ${JSON.stringify(ctx)}`;
