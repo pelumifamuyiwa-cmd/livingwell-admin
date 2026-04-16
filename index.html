@@ -4429,13 +4429,13 @@ async function startBulkCreate() {
 }
 
 async function saveRep() {
-  const fullname = document.getElementById('rep-fullname').value.trim();
-  const refcode = document.getElementById('rep-refcode').value.trim();
-  const phone = document.getElementById('rep-phone').value.trim();
-  const birthday = document.getElementById('rep-birthday').value;
-  const address = document.getElementById('rep-address').value.trim();
+  const fullname    = document.getElementById('rep-fullname').value.trim();
+  const refcode     = document.getElementById('rep-refcode').value.trim();
+  const phone       = document.getElementById('rep-phone').value.trim();
+  const birthday    = document.getElementById('rep-birthday').value;
+  const address     = document.getElementById('rep-address').value.trim();
   const date_joined = document.getElementById('rep-joined').value;
-  const password = document.getElementById('rep-password').value.trim() || 'LivingWell2026';
+  const password    = document.getElementById('rep-password').value.trim() || 'LivingWell2026';
   if (!fullname || !refcode) { showToast('Full name and ref code are required', 'error'); return; }
 
   // Prevent duplicate ref codes
@@ -4447,23 +4447,30 @@ async function saveRep() {
     }
   } catch(e) { /* non-fatal, continue */ }
 
-  const email = `${refcode.toLowerCase().replace(/\s+/g,'')}@livingwell.com`;
-
-  // Disable button to prevent double-submit
+  const email   = `${refcode.toLowerCase().replace(/\s+/g, '')}@livingwell.com`;
   const saveBtn = document.querySelector('#modal-add-rep .btn-purple');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Creating...'; }
 
   try {
-    let authRes, authData = {}, rawText = '';
+    // ── Step 1: Create auth user via Supabase Admin REST API directly ──
+    // Bypasses the Edge Function so ALL admins (owner + manager) can create
+    // reps without Edge Function auth/cold-start failures.
+    let authData = {}, rawText = '';
+    let authRes;
     try {
-      authRes = await fetch(EDGE_FN, {
+      authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SERVICE_KEY}`,
-          'apikey': SERVICE_KEY
+          'apikey': SERVICE_KEY,
+          'Authorization': `Bearer ${SERVICE_KEY}`
         },
-        body: JSON.stringify({ action: 'create', email, password })
+        body: JSON.stringify({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { full_name: fullname, role: 'rep' }
+        })
       });
       rawText = await authRes.text();
       try { authData = JSON.parse(rawText); } catch(e) {}
@@ -4471,20 +4478,32 @@ async function saveRep() {
       showToast('Network error — check your connection: ' + netErr.message, 'error');
       return;
     }
-    if (!authRes.ok || authData.error) {
-      showToast(authData.error || authData.message || ('HTTP ' + authRes.status + ': ' + rawText.slice(0,120)), 'error');
+
+    if (!authRes.ok || authData.error || authData.error_code) {
+      const msg = authData.msg || authData.message || authData.error_description || authData.error || rawText.slice(0, 160);
+      showToast('Failed to create account: ' + msg, 'error');
       return;
     }
-    if (!authData.id) {
-      showToast('No user ID returned. Edge Function may be sleeping — try again in 10 seconds.', 'error');
+
+    const userId = authData.id;
+    if (!userId) {
+      showToast('No user ID returned from auth. Please try again.', 'error');
       return;
     }
-    const profileData = { id: authData.id, full_name: fullname, ref_code: refcode, phone, role: 'rep', is_active: true };
-    if (birthday) profileData.birthday = birthday;
-    if (address) profileData.address = address;
+
+    // ── Step 2: Insert profile row with SERVICE_KEY (bypasses RLS for all admin roles) ──
+    const profileData = {
+      id: userId,
+      full_name: fullname,
+      ref_code: refcode,
+      phone,
+      role: 'rep',
+      is_active: true
+    };
+    if (birthday)    profileData.birthday    = birthday;
+    if (address)     profileData.address     = address;
     if (date_joined) profileData.date_joined = date_joined;
 
-    // Always use SERVICE_KEY directly for profile insert to bypass RLS for all admin roles
     const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
       method: 'POST',
       headers: {
@@ -4495,19 +4514,28 @@ async function saveRep() {
       },
       body: JSON.stringify(profileData)
     });
+
     if (!profRes.ok) {
       const errText = await profRes.text();
       let errMsg = 'Profile save failed';
       try { errMsg = JSON.parse(errText).message || errMsg; } catch(e) {}
-      showToast('Auth created but profile failed: ' + errMsg, 'error');
+      // Auth user was created — clean it up to avoid orphan accounts
+      try {
+        await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+          method: 'DELETE',
+          headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` }
+        });
+      } catch(e) {}
+      showToast('Account creation failed: ' + errMsg, 'error');
       return;
     }
 
     closeModal('modal-add-rep');
-    showToast(`✓ Account created! Login: ${email} / ${password}`, 'success');
+    showToast(`Rep created! Login: ${email} / ${password}`, 'success');
     loadReps();
-  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
-  finally {
+  } catch(e) {
+    showToast('Failed: ' + e.message, 'error');
+  } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Rep Account'; }
   }
 }
