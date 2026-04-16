@@ -741,6 +741,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   padding: 12px 20px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   transition: background 0.15s;
+  flex-wrap: wrap;
 }
 
 .leader-item:hover { background: rgba(255,255,255,0.02); }
@@ -765,11 +766,52 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   flex-shrink: 0;
 }
 
-.leader-name { font-weight: 600; color: var(--white); font-size: 0.85rem; }
-.leader-ref { font-size: 0.72rem; color: var(--text3); }
+.leader-name {
+  font-weight: 600; color: var(--white); font-size: 0.85rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.leader-ref { font-size: 0.72rem; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .leader-stats { margin-left: auto; text-align: right; }
 .leader-count { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; font-weight: 700; color: var(--purple-light); }
 .leader-sub { font-size: 0.68rem; color: var(--text3); }
+
+/* ── LEADERBOARD MOBILE ── */
+@media (max-width: 600px) {
+  .leader-item {
+    padding: 12px 14px;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  /* Left side: rank + avatar + name block — takes full width */
+  .leader-item > div:first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* Stats row wraps below on its own line */
+  .leader-item > div:last-child,
+  .leader-item > span:last-child {
+    flex: 1 1 100%;
+  }
+
+  /* Prevent card-sub from overflowing on small screens */
+  .card-sub {
+    white-space: normal;
+    word-break: break-word;
+    font-size: 0.72rem;
+  }
+
+  /* Performance page header period select */
+  #perf-period {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+  }
+}
 
 /* ── STOCK BAR ── */
 .stock-item {
@@ -2056,7 +2098,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <!-- Overview Tab -->
       <div id="perfview-overview">
         <!-- Summary strip -->
-        <div id="perf-summary-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;"></div>
+        <div id="perf-summary-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:16px;"></div>
         <!-- Leaderboard -->
         <div class="card">
           <div class="card-header">
@@ -5155,11 +5197,11 @@ async function loadPerformance() {
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
           <div class="leader-rank ${i<3?'top':''}" style="flex-shrink:0;">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
           <div class="leader-avatar" style="flex-shrink:0;">${r.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}</div>
-          <div style="flex:1;min-width:0;">
-            <div class="leader-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.full_name}</div>
-            <div class="leader-ref">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
+          <div style="flex:1;min-width:0;overflow:hidden;">
+            <div class="leader-name">${r.full_name}</div>
+            <div class="leader-ref" style="overflow:hidden;text-overflow:ellipsis;">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
             <div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-              <div style="width:60px;height:5px;background:var(--card-border);border-radius:99px;flex-shrink:0;">
+              <div style="width:50px;height:5px;background:var(--card-border);border-radius:99px;flex-shrink:0;">
                 <div style="width:${Math.min(r.completionRate,100)}%;height:100%;background:${barColor};border-radius:99px;"></div>
               </div>
               <span style="font-size:0.68rem;font-weight:700;color:${rateColor};white-space:nowrap;">${r.completionRate}% done</span>
@@ -5168,13 +5210,13 @@ async function loadPerformance() {
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;text-align:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
-          <div><div class="leader-count">${r.total}</div><div class="leader-sub">orders</div></div>
-          <div><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">done</div></div>
-          <div><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancel</div></div>
-          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">revenue</div></div>
+        <div style="display:flex;gap:8px;text-align:center;flex-wrap:wrap;align-items:center;justify-content:flex-start;padding-left:4px;">
+          <div style="min-width:38px;"><div class="leader-count">${r.total}</div><div class="leader-sub">orders</div></div>
+          <div style="min-width:38px;"><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">done</div></div>
+          <div style="min-width:38px;"><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancel</div></div>
+          <div style="min-width:52px;"><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">revenue</div></div>
+          <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="flex-shrink:0;">${r.is_active?'Active':'Inactive'}</span>
         </div>
-        <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="flex-shrink:0;">${r.is_active?'Active':'Inactive'}</span>
       </div>`;
     }).join('');
 
