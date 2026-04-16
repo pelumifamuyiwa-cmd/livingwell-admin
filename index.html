@@ -2261,9 +2261,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <!-- Add Rep Modal -->
 <div class="modal-overlay" id="modal-add-rep">
   <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">Add Sales Rep</div>
-      <div class="modal-sub">Rep will log in with Ref Code + default password</div>
+    <div class="modal-header" style="display:flex;align-items:flex-start;justify-content:space-between;">
+      <div>
+        <div class="modal-title">Add Sales Rep</div>
+        <div class="modal-sub">Rep will log in with Ref Code + default password</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-add-rep')">✕</button>
     </div>
     <div class="form-grid">
       <div class="form-group full">
@@ -4392,13 +4395,32 @@ async function saveRep() {
   const date_joined = document.getElementById('rep-joined').value;
   const password = document.getElementById('rep-password').value.trim() || 'LivingWell2026';
   if (!fullname || !refcode) { showToast('Full name and ref code are required', 'error'); return; }
-  const email = `${refcode.toLowerCase()}@livingwell.com`;
+
+  // Prevent duplicate ref codes
+  try {
+    const existing = await api(`profiles?ref_code=eq.${encodeURIComponent(refcode)}&select=id`);
+    if (existing && existing.length > 0) {
+      showToast(`Ref code "${refcode}" is already taken. Use a different one.`, 'error');
+      return;
+    }
+  } catch(e) { /* non-fatal, continue */ }
+
+  const email = `${refcode.toLowerCase().replace(/\s+/g,'')}@livingwell.com`;
+
+  // Disable button to prevent double-submit
+  const saveBtn = document.querySelector('#modal-add-rep .btn-purple');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Creating...'; }
+
   try {
     let authRes, authData = {}, rawText = '';
     try {
       authRes = await fetch(EDGE_FN, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SERVICE_KEY}`,
+          'apikey': SERVICE_KEY
+        },
         body: JSON.stringify({ action: 'create', email, password })
       });
       rawText = await authRes.text();
@@ -4419,11 +4441,33 @@ async function saveRep() {
     if (birthday) profileData.birthday = birthday;
     if (address) profileData.address = address;
     if (date_joined) profileData.date_joined = date_joined;
-    await api(`profiles`, 'POST', profileData, { Prefer: 'return=minimal' });
+
+    // Always use SERVICE_KEY directly for profile insert to bypass RLS for all admin roles
+    const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_KEY,
+        'Authorization': `Bearer ${SERVICE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(profileData)
+    });
+    if (!profRes.ok) {
+      const errText = await profRes.text();
+      let errMsg = 'Profile save failed';
+      try { errMsg = JSON.parse(errText).message || errMsg; } catch(e) {}
+      showToast('Auth created but profile failed: ' + errMsg, 'error');
+      return;
+    }
+
     closeModal('modal-add-rep');
     showToast(`✓ Account created! Login: ${email} / ${password}`, 'success');
     loadReps();
   } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+  finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Rep Account'; }
+  }
 }
 
 async function toggleRepStatus(id, isActive) {
@@ -5107,31 +5151,30 @@ async function loadPerformance() {
       const rateColor = r.completionRate >= 75 ? 'var(--green)' : r.completionRate >= 50 ? 'var(--amber)' : 'var(--red)';
       const barColor = r.completionRate >= 75 ? '#22c55e' : r.completionRate >= 50 ? '#f59e0b' : '#ef4444';
       return `
-      <div class="leader-item">
-        <div class="leader-rank ${i<3?'top':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
-        <div class="leader-avatar">${r.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}</div>
-        <div style="flex:1;min-width:0;">
-          <div class="leader-name">${r.full_name}</div>
-          <div class="leader-ref">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
-          <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <div style="flex:1;height:5px;background:var(--card-border);border-radius:99px;max-width:120px;min-width:60px;">
-              <div style="width:${Math.min(r.completionRate,100)}%;height:100%;background:${barColor};border-radius:99px;"></div>
+      <div class="leader-item" style="flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+          <div class="leader-rank ${i<3?'top':''}" style="flex-shrink:0;">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+          <div class="leader-avatar" style="flex-shrink:0;">${r.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="leader-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.full_name}</div>
+            <div class="leader-ref">${r.ref_code||'—'} · ${r.phone||'no phone'}</div>
+            <div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <div style="width:60px;height:5px;background:var(--card-border);border-radius:99px;flex-shrink:0;">
+                <div style="width:${Math.min(r.completionRate,100)}%;height:100%;background:${barColor};border-radius:99px;"></div>
+              </div>
+              <span style="font-size:0.68rem;font-weight:700;color:${rateColor};white-space:nowrap;">${r.completionRate}% done</span>
+              <span style="font-size:0.65rem;font-weight:600;color:var(--red);white-space:nowrap;">${r.cancellationRate}% cancel</span>
+              <span style="font-size:0.68rem;font-weight:700;color:var(--purple-light);white-space:nowrap;">SPI: ${r.spi}pts</span>
             </div>
-            <span style="font-size:0.7rem;font-weight:700;color:${rateColor};">${r.completionRate}% completion</span>
-            <span style="font-size:0.65rem;font-weight:600;color:var(--red);">${r.cancellationRate}% cancelled</span>
-          </div>
-          <div style="margin-top:4px;">
-            <span style="font-size:0.72rem;font-weight:700;color:var(--purple-light);">SPI: ${r.spi}pts</span>
           </div>
         </div>
-        <div style="display:flex;gap:12px;text-align:center;flex-shrink:0;">
+        <div style="display:flex;gap:8px;text-align:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
           <div><div class="leader-count">${r.total}</div><div class="leader-sub">orders</div></div>
-          <div><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">delivered</div></div>
-          <div><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancelled</div></div>
-          <div><div class="leader-count" style="color:var(--purple-light);font-size:0.78rem;">₦${(r.value_ordered/1000).toFixed(0)}k</div><div class="leader-sub">val. ordered</div></div>
-          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">val. delivered</div></div>
+          <div><div class="leader-count" style="color:var(--green);">${r.completed}</div><div class="leader-sub">done</div></div>
+          <div><div class="leader-count" style="color:var(--red);">${r.cancelled}</div><div class="leader-sub">cancel</div></div>
+          <div><div class="leader-count" style="color:var(--amber);font-size:0.78rem;">₦${(r.value/1000).toFixed(0)}k</div><div class="leader-sub">revenue</div></div>
         </div>
-        <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="margin-left:12px;">${r.is_active?'Active':'Inactive'}</span>
+        <span class="badge ${r.is_active?'badge-active':'badge-inactive'}" style="flex-shrink:0;">${r.is_active?'Active':'Inactive'}</span>
       </div>`;
     }).join('');
 
