@@ -4556,6 +4556,7 @@ async function deleteRep(id, name) {
       try {
         const repOrders = await api(`orders?rep_id=eq.${id}&select=id`);
         for (const o of (repOrders||[])) {
+          await api(`payments?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
           await api(`deliveries?order_id=eq.${o.id}`, 'DELETE', null, { Prefer: 'return=minimal' });
         }
         await api(`orders?rep_id=eq.${id}`, 'DELETE', null, { Prefer: 'return=minimal' });
