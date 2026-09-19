@@ -7003,16 +7003,6 @@ async function sendChatMessage() {
   appendUserMessage(text);
   chatBusy=true; showTyping();
 
-  // ── TEMPORARILY PAUSED: skip real data fetch / AI call ──
-  // To re-enable the chatbot, delete this block (down to and including the `return;` below),
-  // so execution falls through to the original try{...} logic that follows.
-  setTimeout(() => {
-    hideTyping();
-    appendBotMessage('⚠️ AI credit limit reached for this billing period. The assistant will be back once credits are renewed. Please check back later or contact your administrator.');
-    chatBusy = false;
-  }, 700);
-  return;
-
   try {
     const q   = text.toLowerCase();
     const ctx = await fetchAllBusinessData(q);
